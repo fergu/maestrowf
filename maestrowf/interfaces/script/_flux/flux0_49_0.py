@@ -226,8 +226,8 @@ class FluxInterface_0490(FluxInterface):
                 else:
                     LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
                                 " for attribute '%s'. Omitting from jobspec.",
-                                batch_opt_name,
-                                batch_opt_value)
+                                batch_attr_value,
+                                batch_attr_name)
 
             # Add in job shell options if not null (-o/--setopt)
             for batch_opt_name, batch_opt_value in addtl_batch_args["setopt"].items():
@@ -236,8 +236,8 @@ class FluxInterface_0490(FluxInterface):
                 else:
                     LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
                                 " for shell option '%s'. Omitting from jobspec.",
-                                batch_opt_name,
-                                batch_opt_value)
+                                batch_opt_value,
+                                batch_opt_name)
             
             if walltime > 0:
                 jobspec.duration = walltime

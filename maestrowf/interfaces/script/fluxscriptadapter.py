@@ -164,7 +164,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         if alloc_eflags:
             if step_exclusive:
                 LOGGER.warn("Overriding batch block allocation_args with steps exclusive setting '%s'",
-                            exclusive)
+                            step_exclusive)
             else:
                 self._exclusive['allocation'] = True
 
@@ -175,7 +175,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         if launcher_eflags:
             if step_exclusive and self._exclusive['launcher']:
                 LOGGER.warn("Overriding batch block launcher_args with steps exclusive setting '%s'",
-                            exclusive)
+                            step_exclusive)
             else:
                 self._exclusive['launcher'] = True
 
