@@ -6,6 +6,60 @@
 
 The default parameter value construction in Maestro is limited to explicit value lists in the study specification. While pgen <!-- INSERT LINK --> facilitates arbitrary construction via python, there are a variety of common operations that are used in composing parameters that could benefit from an api to reduce user boilerplate code.  This proposal outlines a set of basic operations to enable support for along with a UI for working with them directly in the yaml formatted study specification and a corresponding set of functionality available in pgen.  Maestro aims to be minimal on dependencies and not pin all users to particular solutions where possible.  This proposal takes care to maintain that.  The goal is for the core features and operations to depend only upon standard library utilities, with the excellent itertools library facilitating much of this.  There are still many operations that cannot be supported this way, such as the expansive space around statistical methods for generating values, e.g. latin hypercube, random number generation, etc.  For such capabilities a plugin interface will be detailed to enable seamless addition of workflow specific operations that don't require all Maestro users to use the same sampling libraries.
 
+## Conventions
+
+### Assigning Combinations
+
+A special key is used to mark the final/selected combination set: `PARAMETER.COMBINATIONS`, which can either use an operator directly <!-- link to tab? --> or using the `composition_id` key:
+
+``` yaml
+  INITIAL_VELOCITY:
+    values: [0.1, 0.2, 0.3]
+	labels: "INIT_VEL.%%"
+	
+  STOP_TIME:
+    values: [4.0, 2.0, 1.0]
+	labels: "ST.%%"
+  
+  PARAMETERS:
+    operator: zip
+	inputs: [INITIAL_VELOCITY, STOP_TIME]
+	
+  PARAMETER.COMBINATIONS:        # (1)
+    composition_id: PARAMETERS
+```
+
+2. Here we identify what composition defines the parameter combinations for this study
+
+
+The resulting set of parameter combinations:
+
+| **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+| :-----------: | :---------: | :---------: | :---------: |
+| INITIAL_VELOCITY | 0.1 | 0.2 | 0.3 |
+| STOP_TIME        | 4.0 | 2.0 | 1.0 |
+
+### Labels
+
+Only parameters with labels keys will show up in the final parameter combination set, e.g. INITIAL_VELOCITY shows up, but PARAMETERS
+does not in the snippet below.
+
+``` yaml
+INITIAL_VELOCITY:
+  values: [0.1, 0.2, 0.3]
+  labels: INIT_VEL.%%
+  
+REVERSED_VELS:
+  operator: reverse
+  input: INITIAL_VELOCITY
+```
+
+Resulting parameter combinations (after assigning REVERSED_VELS to PARAMETER.COMBINATIONS)
+
+| **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+| :-----------: | :---------: | :---------: | :---------: |
+| INITIAL_VELOCITY | 0.1 | 0.2 | 0.3 |
+
 ## Common Operations
 
 Here we detail a base set of operators to provide out of the box for building and composing parameter combinations.
@@ -14,13 +68,50 @@ Here we detail a base set of operators to provide out of the box for building an
 
 :   Explicit list of values (currently the only method available in `global.parameters` block in the study specification)
 
+    ``` yaml
+	INITIAL_VELOCITY:
+	  values: [0.1, 0.2, 0.3]
+	  labels: INIT_VEL.%%
+	```
+	
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+    | :-----------: | :---------: | :---------: | :---------: |
+    | INITIAL_VELOCITY | 0.1 | 0.2 | 0.3 |
+
 `Range`
 
-:   Create value lists using start, stop, and increment (see `range` python function)
+:   Create value lists using start, stop, and increment.  Similar to `range` python function,
+    but is inclusive of the stop.
+
+    ``` yaml
+	RESOLUTION:
+	  operator: range
+	  start: 1
+	  stop: 4
+	  increment: 1
+	  labels: RES.%%
+	```
+	
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** | **Combo 4** |
+    | :-----------: | :---------: | :---------: | :---------: | :---------: |
+    | RESOLUTION | 1 | 2 | 3 | 4 |
 
 `Linspace`
 
-:   Linear sampling between start, stop points, creating `N` intervals
+:   Linear sampling between start, stop points, creating `N` intervals, inclusive of start/stop values
+
+    ``` yaml
+	INITIAL_VELOCITY:
+	  operator: linspace
+	  start: 0.1
+	  stop: 0.4
+	  intervals: 4
+	  labels: INIT_VEL.%%
+	```
+	
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** | **Combo 4** |
+    | :-----------: | :---------: | :---------: | :---------: | :---------: |
+    | INITIAL_VELOCITY | 0.1 | 0.2 | 0.3 | 0.4 |
 
 `Random`
 
@@ -28,19 +119,109 @@ Here we detail a base set of operators to provide out of the box for building an
 
 `Zip`
 
-:   Compositional operator, as with pythons' zip function, used to create lists of tuples built from other lists
+:   Compositional operator, as with pythons' zip function, used to create lists of tuples built from other lists.  This is the default
+    operator in global.parameters for combining individual parameters into the parameter combinations.
+	
+	``` yaml
+      INITIAL_VELOCITY:
+        values: [0.1, 0.2, 0.3]
+    	labels: "INIT_VEL.%%"
+    	
+      STOP_TIME:
+        values: [4.0, 2.0, 1.0]
+    	labels: "ST.%%"
+      
+	  PARAMETERS:
+	    operator: zip
+		inputs: [INITIAL_VELOCITY, STOP_TIME]
+    ```
+
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+    | :-----------: | :---------: | :---------: | :---------: |
+    | INITIAL_VELOCITY | 0.1 | 0.2 | 0.3 |
+    | STOP_TIME        | 4.0 | 2.0 | 1.0 |
+
+	!!! question
+	
+	    Should this have a strict mode switch?  global.parameters uses strict mode, meaning unequal lengths
+		is an error, while python's zip silently truncates to the shortest parameter
 
 `Batched`
 
 :   Build lists of tuples from a single list,  (see itertools' batched)
 
+	``` yaml
+	MIXED_PARAMS:
+	  operator: batched
+	  input_values: [4, A, 3, B, 2, C]
+	  batch_size: 2
+	  labels: ['INTPARAM.%%', 'STRPARAM.%%'] # (1)
+	```
+	
+	1. Labels is now a tuple/list, same size as batch_size, giving each param in the batch a label
+	
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+    | :-----------: | :---------: | :---------: | :---------: |
+    | INTPARAM | 4 | 3 | 2 |
+    | STRPARAM | A | B | C |
+
+	!!! question
+	
+	    Is this really a useful operator? Seems very nice and ~convoluted for also getting the labels in there
+
+
 `Repeat`
 
 :   Replicate a constant value: i.e. wrap a single value parameter before handing off to zip to combine it with another explicit list. (NOTE: should this just take the 'N' argument instead of requiring going through zip?)
 
+	``` yaml
+	RESOLUTION:
+	  operator: repeat
+	  value: 1
+	  # count: 3 # (1)
+	  labels: RES.%%
+	  
+    INITIAL_VELOCITY:
+	  values: [0.1, 0.2, 0.3]
+	  labels: INITVEL.%%
+	  
+    PARAMETERS:
+	  operator: zip # (2)
+	  inputs: [INITIAL_VELOCITY, RESOLUTION]
+	```
+	
+	1. Optional manual count if expansion is needed before combining with other operators
+	2. Zip triggers repeats as many times as needed if count is absent
+	
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+    | :-----------: | :---------: | :---------: | :---------: |
+    | INITIAL_VELOCITY | 0.1 | 0.2 | 0.3 |
+    | RESOLUTION | 1 | 1 | 1 |
+
+    !!! question
+	
+	    Another option for auto count is using cycle instead: should repeat just be manual only?
+
+
 `Reverse`
 
 :   Transformational operator, reversing an existing list of values before combining with other parameters
+
+	``` yaml
+    INITIAL_VELOCITY:
+	  values: [0.1, 0.2, 0.3]
+	  labels: INITVEL.%%
+	  
+    PARAMETERS:
+	  operator: reverse
+	  input: INITIAL_VELOCITY
+	```
+	
+	
+    | **Parameter** | **Combo 1** | **Combo 2** | **Combo 3** |
+    | :-----------: | :---------: | :---------: | :---------: |
+    | INITIAL_VELOCITY | 0.3 | 0.2 | 0.1 |
+
 
 `Slice`
 
@@ -124,7 +305,7 @@ This simple case shows how to replicate the behavior of the existing `global.par
 		inputs: [INITIAL_VELOCITY, STOP_TIME]
 		
       PARAMETER.COMBINATIONS:        # (2)
-        composition_id: RES_STUDY
+        composition_id: PARAMETERS
     ```
 
     1. An intermediate combination
@@ -182,3 +363,12 @@ The resulting set of parameter combinations:
 | RESOLUTION       | 1   | 2   | 1   | 2   | 1   | 2   |
 
 
+## Register Custom Operators
+
+A plugin interface will be provided to facilitate registering custom operators that go beyond what the standard library
+can provide.  This will facilitate hooking up the statistical package of your choice to add custom sampling operations
+such as best candidate or latin hypercubes.
+
+!!! warning
+
+    Under construction!!
