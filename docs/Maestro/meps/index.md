@@ -6,3 +6,5 @@
 
 [MEP 002](mep-002-parameter-composition.md) Parameter composition
 
+[MEP 003](mep-003-human-readable-hashing.md) Human readable hashing
+

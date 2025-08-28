@@ -116,6 +116,7 @@ nav:
         - Maestro Enhancement Proposals:
             - MEP 001: 'Maestro/meps/mep-001-encore-study-iteration.md'
             - MEP 002: 'Maestro/meps/mep-002-parameter-composition.md'
+            - MEP 003: 'Maestro/meps/mep-003-human-readable-hashing.md'
             # - API Reference: 'reference/'
               
 extra:
