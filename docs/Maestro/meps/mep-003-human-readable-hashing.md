@@ -103,3 +103,30 @@ Default names for steps, and workspaces, uses the parameter labels as of v1.1.11
 | step-2 used combo 2 | step-2_PARAM_1.1.PARAM_2.5   |
 | step-2 used combo 3 | step-2_PARAM_1.2.PARAM_2.3   |
 | step-2 used combo 4 | step-2_PARAM_1.2.PARAM_2.5   |
+
+## Proposed New Hashing Scheme
+
+A simple, readable hashing scheme is evident in the examples above: `<step-name>_<used_combination_ID>`, where `used_combination_ID` is the step specific used combination numbers, since each step can have it's own set of combinations, and varying numbers of combinations per step.  This per-step nature leads to the base step name being retained as a prefix to ensure it's clear that `used_combination_1` in `step-1`'s workspaces is not the same as that within `step-2`'s workspaces.
+
+### Demo Hashing/Workspaces
+
+| **Used Combo \#**   | **Sorted Parameter Values** | **Hashed step id/workspace** |
+| :-----------:       | :---------:                 | :---------:                  |
+| step-1 used combo 1 | PARAM_1: 1                  | step-1_used_combination_1    |
+| step-1 used combo 2 | PARAM_1: 2                  | step-1_used_combination_2    |
+| step-2 used combo 1 | PARAM_1: 1, PARAM_2: 3      | step-2_used_combination_1    |
+| step-2 used combo 2 | PARAM_1: 1, PARAM_2: 5      | step-2_used_combination_2    |
+| step-2 used combo 3 | PARAM_1: 2, PARAM_2: 3      | step-2_used_combination_3    |
+| step-2 used combo 4 | PARAM_1: 2, PARAM_2: 5      | step-2_used_combination_4    |
+
+### Hash construction/parameter ordering
+
+Owing to the use of set intersections for determining id's and connectivity, much order information is lost once graph expasion is done.  To keep things simple and ~intuitive, all the used combinations will use sorting basd on parameter names, and then values, with used_combination number counting up from one from that sorted list.  This is reflected in the prior workspace/combo table <!-- INSERT LINK -->
+
+### Study Metadata
+
+There will be some corresponding tweaks to the parameters.yaml metadata to expose the step specific used parameter combinations in addition to the full set of parameter combinations.  This is to facilitate quick lookups of parameter values, e.g. bash or zsh shell functions to quickly get this information via yq <!-- link! -->, pipe it into fzf and then onto cd/pushd for study workspace navigation where you can select step workspaces based on human readable parameter name: value tables, or other quick lookups.  This expands upon the current parameters.yaml which only contained the full parameter combinations, requiring sometimes expensive operations to find the one corresponding to a current step that only uses a subset of parameters.
+
+!!! question
+
+    Add snippets of parameters.yaml, both old and new, and also demo gif of yq + fzf dir navigation workflow?
