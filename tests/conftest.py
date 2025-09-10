@@ -1,10 +1,24 @@
 from collections import defaultdict
+import difflib
+import logging
 import os
+from pathlib import Path
+import re
+import shutil
 from subprocess import check_output
 
 import pytest
 
-from maestrowf.utils import parse_version
+from maestrowf.datastructures.core import Study
+from maestrowf.datastructures.environment import Variable
+from maestrowf.specification import YAMLSpecification
+
+from maestrowf.utils import (
+    create_parentdir,
+    LoggerUtility,
+    make_safe_path,
+    parse_version
+)
 from packaging.version import InvalidVersion
 
 SCHEDULERS = set(('sched_lsf', 'sched_slurm', 'sched_flux'))
@@ -143,3 +157,187 @@ def status_csv_path():
         return os.path.join(dirpath, "status", "test_status_data", file_name)
 
     return load_status_csv
+
+
+@pytest.fixture
+def data_dir():
+    """Base directory for top level shared test data."""
+    return Path(__file__).parent / "data"
+
+
+@pytest.fixture
+def variant_expected_output(data_dir):
+    def _load_variant_expected_output(expected_output_name):
+        return data_dir / "expected_spec_outputs" / expected_output_name
+
+    return _load_variant_expected_output
+
+
+@pytest.fixture
+def variant_spec_path(data_dir):
+    """Utility fixture to load yaml spec's from top level shared test data"""
+    def _load_variant_spec(spec_name):
+        # Not loading it here: defer to yamlspecification..
+        return data_dir / "specs" / spec_name
+    return _load_variant_spec
+
+
+@pytest.fixture
+def load_study():
+    """Fixture to provide an unexecuted study object"""
+    def _load_study(spec_path, output_path, dry_run=False):
+
+        # Setup some default args to use for testing
+        use_tmp_dir = True          # NOTE: likely want to let pytest control this?
+        hash_ws = False
+        throttle = 0
+        submission_attempts = 3
+        restart_limit = 1
+
+        # Load the Specification
+        spec = YAMLSpecification.load_specification(spec_path)
+
+        environment = spec.get_study_environment()
+        steps = spec.get_study_steps()
+
+        # Set up the output directory.
+        out_dir = environment.remove("OUTPUT_PATH")
+        if output_path:
+            # If out is specified in the args, ignore OUTPUT_PATH.
+            output_path = os.path.abspath(output_path)
+        else:
+            if out_dir is None:
+                # If we don't find OUTPUT_PATH in the environment, assume pwd.
+                out_dir = os.path.abspath("./")
+            else:
+                # We just take the value from the environment.
+                out_dir = os.path.abspath(out_dir.value)
+
+            out_name = spec.name.replace(" ", "_")
+            # NOTE: shouldn't need timestamp for testing; omitting for now
+            # out_name = "{}_{}".format(
+            #     spec.name.replace(" ", "_"),
+            #     time.strftime("%Y%m%d-%H%M%S")
+            # )
+            output_path = make_safe_path(out_dir, *[out_name])
+        environment.add(Variable("OUTPUT_PATH", output_path))
+
+        # Set up file logging
+        create_parentdir(os.path.join(output_path, "logs"))
+        output_path = Path(output_path)
+        log_path = output_path / "logs" / "{}.log".format(spec.name)
+        # log_path = os.path.join(output_path, "logs", "{}.log".format(spec.name))
+        # TODO: revisit this logger/name -> don't use __name__ as in maestro.py?
+        LOGGER = logging.getLogger()
+        LOG_UTIL = LoggerUtility(LOGGER)
+        LFORMAT = "[%(asctime)s: %(levelname)s] %(message)s"
+        LOG_UTIL.add_file_handler(log_path, LFORMAT, 2)  # INFO level
+
+        # Addition of the $(SPECROOT) to the environment.
+        spec_root = os.path.split(spec_path)[0]
+        spec_root = Variable("SPECROOT", os.path.abspath(spec_root))
+        environment.add(spec_root)
+
+        # Don't wire up pgen for now.
+        parameters = spec.get_parameters()
+
+        # Setup the study.
+        study = Study(spec.name, spec.description, studyenv=environment,
+                      parameters=parameters, steps=steps, out_path=output_path)
+
+        # Set up the study workspace and configure it for execution.
+        study.setup_workspace()
+        study.configure_study(
+            throttle=throttle,
+            submission_attempts=submission_attempts,
+            restart_limit=restart_limit,
+            use_tmp=use_tmp_dir,
+            hash_ws=hash_ws,
+            dry_run=dry_run)
+        study.setup_environment()
+
+        batch = {"type": "local"}
+        if spec.batch:
+            batch = spec.batch
+            if "type" not in batch:
+                batch["type"] = "local"
+
+        # Copy the spec to the output directory
+        shutil.copy(spec_path, study.output_path)
+
+        # Use the Conductor's classmethod to store the study.
+        # Conductor.store_study(study)
+        # Conductor.store_batch(study.output_path, batch)
+
+        return study
+
+    return _load_study
+
+
+@pytest.fixture
+def text_diff():
+    """
+    Fixture to diff two text streams, ignoring lines that match any pattern in
+    optional ignore_patterns.  Ignore patterns are a list of regexes.
+    """
+    def _diff(actual, expected, ignore_patterns=None):
+        """
+        Compare two text streams, ignoring lines matching any ignore_patterns.
+        Text streams are assumed to not be split on line endings yet.
+
+        :param actual: The actual text output (str)
+        :param expected: The expected text (str)
+        :param ignore_patterns: List of regex patterns to ignore/whitelist (optional)
+        :raises AssertionError: If the filtered texts do not match
+        """
+        if ignore_patterns is None:
+            ignore_patterns = []
+
+        def line_matches(line):
+            return [re.search(pattern, line) for pattern in ignore_patterns]
+        
+        def filter_lines(lines):
+            for line in lines:
+                if any(line_matches(line)):
+                    continue
+                yield line
+
+        actual_lines = actual.splitlines()
+        if actual_lines and actual_lines[-1].strip() == "":
+            actual_lines.pop()
+        expected_lines = expected.splitlines()
+        if expected_lines and expected_lines[-1].strip() == "":
+            expected_lines.pop()
+
+        def annotate_ignored_lines(lines_to_annotate):
+            for line in lines_to_annotate:
+                if any(line_matches(line)):
+                    yield f"IGNORED: {line}"
+                else:
+                    yield line
+
+        actual_filtered_lines = list(filter_lines(actual_lines))
+
+        expected_filtered_lines = list(filter_lines(expected_lines))
+
+        if actual_filtered_lines != expected_filtered_lines:
+            actual_annotated_lines = list(annotate_ignored_lines(actual_lines))
+
+            expected_annotated_lines = list(annotate_ignored_lines(expected_lines))
+
+            diff = list(
+                difflib.unified_diff(
+                    expected_annotated_lines,
+                    actual_annotated_lines,
+                    fromfile="expected",
+                    tofile="actual",
+                    lineterm=""
+                )
+            )
+
+            diff = "\n".join(diff)
+            pytest.fail(f"Text streams differ (ignoring marked lines):\n{diff}")
+
+        return True
+
+    return _diff

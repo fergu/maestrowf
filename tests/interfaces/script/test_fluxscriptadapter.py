@@ -34,9 +34,17 @@ This was created to verify existing functionality of the ScriptAdapterFactory
 as it was converted to dynamically load all ScriptAdapters using a namespace
 plugin methodology.
 """
+import re
+
 from maestrowf.interfaces.script.fluxscriptadapter import FluxScriptAdapter
 from maestrowf.interfaces import ScriptAdapterFactory
 
+from maestrowf.datastructures.core import Study
+from maestrowf.datastructures.core.executiongraph import ExecutionGraph, _StepRecord
+from maestrowf.specification import YAMLSpecification
+
+from rich.pretty import pprint
+import pytest
 
 def test_flux_adapter():
     """
@@ -44,7 +52,7 @@ def test_flux_adapter():
     this is validate that existing specifications do not break.
     :return:
     """
-    assert(FluxScriptAdapter.key == 'flux')
+    assert FluxScriptAdapter.key == 'flux'
 
 
 def test_flux_adapter_in_factory():
@@ -55,10 +63,77 @@ def test_flux_adapter_in_factory():
     """
     saf = ScriptAdapterFactory
     # Make sure FluxScriptAdapter is in the facotries object
-    assert(saf.factories[FluxScriptAdapter.key] == FluxScriptAdapter)
+    assert saf.factories[FluxScriptAdapter.key] == FluxScriptAdapter
     # Make sure the FluxScriptAdapter key is in the valid adapters
-    assert(FluxScriptAdapter.key in ScriptAdapterFactory.get_valid_adapters())
+    assert FluxScriptAdapter.key in ScriptAdapterFactory.get_valid_adapters()
     # Make sure that get_adapter returns the FluxScriptAdapter when asking
     # for it by key
-    assert(ScriptAdapterFactory.get_adapter(FluxScriptAdapter.key) ==
+    assert (ScriptAdapterFactory.get_adapter(FluxScriptAdapter.key) ==
            FluxScriptAdapter)
+
+
+@pytest.mark.parametrize(
+    "spec_file, variant_id, expected_batch_files",
+    [
+        (
+            "hello_bye_parameterized_flux",
+            1,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.hello_world_GREETING.Hello.NAME.Pam.flux.sh.1",
+                "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.1"
+            }
+        ),
+    ]
+)
+def test_flux_script_serialization(
+        spec_file,
+        variant_id,
+        expected_batch_files,
+        variant_spec_path,
+        load_study,
+        variant_expected_output,
+        text_diff,
+        tmp_path                # Pytest tmp dir fixture: Path()):
+):
+    spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
+    pprint(spec_path)
+    yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
+
+    study: Study = load_study(spec_path, tmp_path, dry_run=True)
+
+    pkl_path: str
+    ex_graph: ExecutionGraph
+    pkl_path, ex_graph = study.stage()
+    ex_graph.set_adapter(yaml_spec.batch)
+
+    adapter = ScriptAdapterFactory.get_adapter(yaml_spec.batch["type"])
+    adapter = adapter(**ex_graph._adapter)
+
+    # Setup a diff ignore pattern to filter out the #INFO (flux version ...
+    ignore_patterns = [
+        re.compile(r'#INFO \(flux version\)')
+    ]
+
+    # Loop over the steps and execute them
+    for step_name, step_record in ex_graph.values.items():
+        if step_name == "_source":
+            continue
+
+        ex_graph._execute_record(step_record, adapter)
+        # pprint("Step name:")
+        # pprint(step_name)
+        # pprint("Step record:")
+        # pprint(step_record)
+        # # pprint(_record)
+        # pprint("Written script:")
+        with open(step_record.script, "r") as written_script_file:
+            written_script = written_script_file.read()
+            # pprint(written_script.splitlines())
+
+        assert step_name in expected_batch_files
+
+        with open(variant_expected_output(expected_batch_files[step_name]), 'r') as ebf:
+            expected_script = ebf.read()
+
+        # assert written_script == expected_script
+        assert text_diff(written_script, expected_script, ignore_patterns=ignore_patterns)
