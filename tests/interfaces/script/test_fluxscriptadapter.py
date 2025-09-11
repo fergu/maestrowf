@@ -72,6 +72,7 @@ def test_flux_adapter_in_factory():
            FluxScriptAdapter)
 
 
+@pytest.mark.sched_flux         # This one needs to at least import flux to work
 @pytest.mark.parametrize(
     "spec_file, variant_id, expected_batch_files",
     [
