@@ -385,3 +385,43 @@ def parse_version(version_string):
     LOGGER.info("Could not parse version '%s'", version_string)
 
     raise InvalidVersion
+
+
+def dict_to_dot_strings(dictionary, prefix='', result=None, print_none=True):
+    """
+    Helper to convert dictionaries into dot syntax strings, e.g. convertin
+    from maestro's yaml into flux's treedict style syntax for more concise
+    batch directives.
+
+    :param dictionary: Dictionary of args to flatten
+    :type dictionary: dict
+    :param prefix: Prefix to use at current level (used for recursion)
+    :type prefix: str
+    :param result: Accumulated result list (used for recursion)
+    :type result: list or None
+    :param print_none: Flag to print =None literal if value=None, or ""
+    :type print_none: bool
+    :returns: list of string views of dictionary in 'key.value' syntax
+    :rtype: list
+
+    Example
+    >>> dict_to_dot_strings({"foo": {"bar": 2, "foo2": 42}})
+    ['foo.bar=2', 'foo.foo2=42']
+    """
+    if result is None:
+        result = []
+
+    for key, value in dictionary.items():
+        # Create the current key path
+        current_key = f"{prefix}.{key}" if prefix else key
+
+        if isinstance(value, dict):
+            # Recursively process nested dictionaries
+            dict_to_dot_strings(value, current_key, result, print_none)
+        elif value is None and not print_none:
+            result.append(f"{current_key}")
+        else:
+            # Add the terminal value and complete the string
+            result.append(f"{current_key}={value}")
+
+    return result

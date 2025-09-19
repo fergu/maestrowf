@@ -7,7 +7,7 @@ from rich.pretty import pprint
 
 from maestrowf.datastructures.core import ParameterGenerator
 from maestrowf.datastructures.core.parameters import Combination
-from maestrowf.utils import make_safe_path, parse_version
+from maestrowf.utils import make_safe_path, parse_version, dict_to_dot_strings
 from packaging.version import Version, InvalidVersion
 
 from hypothesis import given, HealthCheck, settings, strategies
@@ -174,3 +174,45 @@ def test_path_sanitizer(tmpdir, test_path_str):
         # Handle case of strings that only contain characters make_safe_path says are invalid,
         # leading to empty strings.
         assert test_path_name == ""
+
+
+@pytest.mark.parametrize(
+    "dict_to_flatten, print_none, expected_strings",
+    [
+        (
+            {"foo": {"bar": 2}},
+            True,
+            ["foo.bar=2"],
+        ),
+        (
+            {"foo": {"bar": 2, "foo2": 42}},
+            True,
+            ["foo.bar=2", "foo.foo2=42"],
+        ),
+        (
+            {"foo": {"bar": 2, "foo3": None}},
+            False,
+            ["foo.bar=2", "foo.foo3"],
+        ),
+        (
+            {"foo": {"bar": 2, "foo3": None}},
+            True,
+            ["foo.bar=2", "foo.foo3=None"],
+        ),
+        (
+            {
+                "foo": {"bar": 2, "foo2": 42},
+                "foobar": {"too_many_foos": 9001},
+            },
+            True,
+            ["foo.bar=2", "foo.foo2=42", "foobar.too_many_foos=9001"],
+        ),
+    ],
+)
+def test_dict_to_strings(dict_to_flatten, print_none, expected_strings):
+    """
+    Test flattening of dictionaries to lists of dot syntax strings
+    """
+    dot_strings = dict_to_dot_strings(dict_to_flatten, print_none=print_none)
+
+    assert dot_strings == expected_strings
