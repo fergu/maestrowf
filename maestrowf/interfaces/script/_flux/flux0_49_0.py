@@ -10,6 +10,7 @@ from maestrowf.abstracts.enums import (
     SubmissionCode,
 )
 from maestrowf.abstracts.interfaces.flux import FluxInterface
+from maestrowf.utils import dict_to_dot_strings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class FluxInterface_0490(FluxInterface):
 
     # Config for the groups of alloc args with their own jobspec methods
     known_alloc_arg_types = ["attributes", "shell_options", "conf"]
-    addtl_alloc_arg_type_map = {
+    _addtl_alloc_arg_type_map = {
         "setopt": "shell_options",
         "o": "shell_options",
         "setattr": "attributes",
@@ -70,7 +71,7 @@ class FluxInterface_0490(FluxInterface):
         :param option: option string corresponding to flux cli input
         :return: string, one of known_alloc_arg_types
         """
-        return cls.addtl_alloc_arg_type_map.get(option, None)
+        return cls._addtl_alloc_arg_type_map.get(option, None)
 
     @classmethod
     def get_flux_urgency(cls, urgency) -> int:
@@ -115,14 +116,22 @@ class FluxInterface_0490(FluxInterface):
         for arg_key, arg_value in args_dict.items():
             arg_info = arg_info_type(arg_key)
 
-            for av_name, av_value in arg_value.items():
-                value_str = render_arg_value(av_name, av_value)
-                yield "{prefix}{key}{sep}{value}".format(
+            dot_string_args = dict_to_dot_strings(arg_value, print_none=False)
+            for dot_string_arg in dot_string_args:
+                yield "{prefix}{key}{sep}{dotstringvalue}".format(
                     prefix=arg_info['prefix'],
                     key=arg_key,
                     sep=arg_info['sep'],
-                    value=value_str
+                    dotstringvalue=dot_string_arg
                 )
+            # for av_name, av_value in arg_value.items():
+            #     value_str = render_arg_value(av_name, av_value)
+            #     yield "{prefix}{key}{sep}{value}".format(
+            #         prefix=arg_info['prefix'],
+            #         key=arg_key,
+            #         sep=arg_info['sep'],
+            #         value=value_str
+            #     )
 
     @classmethod
     def submit(
@@ -220,7 +229,7 @@ class FluxInterface_0490(FluxInterface):
 
             # Slurp in extra attributes if not null (queue, bank, ..)
             # (-S/--setattr)
-            for batch_attr_name, batch_attr_value in addtl_batch_args["setattr"].items():
+            for batch_attr_name, batch_attr_value in addtl_batch_args["attributes"].items():
                 if batch_attr_value:
                     jobspec.setattr(batch_attr_name, batch_attr_value)
                 else:
@@ -230,7 +239,7 @@ class FluxInterface_0490(FluxInterface):
                                 batch_attr_name)
 
             # Add in job shell options if not null (-o/--setopt)
-            for batch_opt_name, batch_opt_value in addtl_batch_args["setopt"].items():
+            for batch_opt_name, batch_opt_value in addtl_batch_args["shell_options"].items():
                 if batch_opt_value:
                     jobspec.setattr_shell_option(batch_opt_name, batch_opt_value)
                 else:

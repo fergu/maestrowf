@@ -280,7 +280,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         """
         addtl_batch_args = {
             arg_type: {}
-            for arg_type in self._interface.addtl_alloc_arg_types
+            for arg_type in self._interface.addtl_alloc_arg_types()
         }
         for arg_key, arg_values in self._allocation_args.items():
             # TODO: move this into a validation function for pre launch
