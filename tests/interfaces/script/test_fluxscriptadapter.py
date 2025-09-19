@@ -138,3 +138,86 @@ def test_flux_script_serialization(
 
         # assert written_script == expected_script
         assert text_diff(written_script, expected_script, ignore_patterns=ignore_patterns)
+
+
+
+@pytest.mark.sched_flux         # This one needs to at least import flux to work
+@pytest.mark.parametrize(
+    "spec_file, variant_id, expected_jobspec_keys",
+    [
+        (
+            "hello_bye_parameterized_flux",
+            1,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": {
+                    'resources': [{'exclusive': True}],
+                    'attributes': {
+                        'system': {
+                            'shell': {
+                                'options': {'bar': 42, 'foo': 'bar'},
+                            },
+                            'files': {
+                                'conf.json': {'data': {'resource': {'rediscover': True}}}
+                            },
+                            'gpumode': 'SPC'
+                        }
+                    }
+                },
+                # "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.1"
+            }
+        ),
+    ]
+)
+def test_flux_job_opts(
+        spec_file,
+        variant_id,
+        expected_jobspec_keys,
+        variant_spec_path,
+        load_study,
+        flux_jobspec_check,
+        tmp_path                # Pytest tmp dir fixture: Path()):
+):
+    spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
+    pprint(spec_path)
+    yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
+
+    study: Study = load_study(spec_path, tmp_path, dry_run=False)
+
+    pkl_path: str
+    ex_graph: ExecutionGraph
+    pkl_path, ex_graph = study.stage()
+    ex_graph.set_adapter(yaml_spec.batch)
+
+    adapter = ScriptAdapterFactory.get_adapter(yaml_spec.batch["type"])
+    adapter = adapter(**ex_graph._adapter)
+
+    # Setup a diff ignore pattern to filter out the #INFO (flux version ...
+    ignore_patterns = [
+        re.compile(r'#INFO \(flux version\)')
+    ]
+
+    # Loop over the steps and execute them
+    for step_name, step_record in ex_graph.values.items():
+        if step_name == "_source":
+            continue
+
+        ex_graph._execute_record(step_record, adapter)
+        pprint("Step name:")
+        pprint(step_name)
+        pprint("Step record:")
+        pprint(step_record)
+
+        retcode, job_status = ex_graph.check_study_status()
+
+        pprint(f"{retcode=}, {job_status=}")
+        for record_name, status in job_status.items():
+            if step_name == record_name:
+                jobid = ex_graph.values[record_name].jobid[-1]
+                flux_jobspec_check(jobid, expected_jobspec_keys[step_name])
+
+        # pprint(_record)
+        # pprint("Written script:")
+
+        # assert step_name in expected_batch_files
+
+    assert False

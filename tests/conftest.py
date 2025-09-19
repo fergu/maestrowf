@@ -341,3 +341,63 @@ def text_diff():
         return True
 
     return _diff
+
+
+@pytest.mark.sched_flux
+@pytest.fixture
+def flux_jobspec_check():
+    import flux
+
+    def _diff_jobspec_keys(jobid, expected, path=None):
+        """
+        Helper to recursively check for values in flux jobspec's.
+
+        :param jobid: flux jobid to look up jobspec for (int or f58)
+        :param expected: nested dicts of key/values to verify in jobspec (dict)
+        :param path: optional initial path in jobspec dict to search under
+        """
+        # NOTE: may need some helpers here if needing to mess with uri to change broker
+        fh = flux.Flux()
+
+        # Get the jobspec (do we care about original?)
+        # NOTE: job_kvs_lookup vs job_info_lookup?  does it matter?
+
+        #  Default returns id, jobspec keys
+        jobspec = flux.job.job_kvs_lookup(fh, flux.job.JobID(jobid), decode=True, original=False)['jobspec']
+
+        def assert_nested_dict_subset(actual, expected, path=None):
+            """Recursively assert key/values in actual/expected dictionaries"""
+            if path is None:
+                path = []
+
+            for key, expected_value in expected.items():
+                current_path = path + [repr(key)]
+                assert key in actual, f"Missing key at {'.'.join(current_path)}"
+                actual_value = actual[key]
+                if isinstance(expected_value, dict):
+                    assert isinstance(actual_value, dict), (
+                        f"Expected dict at {'.'.join(current_path)}, "
+                        f"got {type(actual_value).__name__}"
+                    )
+                    assert_nested_dict_subset(actual_value,
+                                              expected_value,
+                                              current_path)
+                elif isinstance(expected_value, list):
+                    assert isinstance(actual_value, list), (
+                        f"Expected list at {'.'.join(current_path)}, "
+                        f"got {type(actual_value).__name__}"
+                    )
+                    for i, item in enumerate(expected_value):
+                        if item is not ...:  # Ellipsis means "skip this index"
+                            assert_nested_dict_subset(actual_value[i],
+                                                      item,
+                                                      current_path + [str(i)])
+                else:
+                    assert actual_value == expected_value, (
+                        f"Value mismatch at {'.'.join(current_path)}: "
+                        f"expected {expected_value!r}, got {actual_value!r}"
+                    )
+
+        assert_nested_dict_subset(jobspec, expected, path=path)
+
+    return _diff_jobspec_keys
