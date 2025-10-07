@@ -247,6 +247,14 @@ def test_dict_to_strings(dict_to_flatten, print_none, expected_strings):
             },
             [("foo.bar", 2), ("foo.foo2", 42), ("foobar.too_many_foos", 9001), ("foo.foobar", 19)],
         ),
+        (
+            {
+                "foo": {"bar": [2, 4], "foo2": 42},
+                "foobar": {"too_many_foos": 9001},
+                "foo.foobar": [19, 21]
+            },
+            [("foo.bar", [2, 4]), ("foo.foo2", 42), ("foobar.too_many_foos", 9001), ("foo.foobar", [19, 21])],
+        ),
     ],
 )
 def test_dict_to_dotpath_tuples(dict_to_flatten, expected_tuples):
@@ -280,6 +288,13 @@ def test_dict_to_dotpath_tuples(dict_to_flatten, expected_tuples):
                 "foobar": {"too_many_foos": 9001},
             },
         ),
+        (
+            [("foo.bar", [2, 4]), ("foo.foo2", 42), ("foobar.too_many_foos", 9001), ("foo.foobar", [19, 21])],
+            {
+                "foo": {"bar": [2, 4], "foo2": 42, "foobar": [19, 21]},
+                "foobar": {"too_many_foos": 9001},
+            },
+        ),
     ],
 )
 def test_unflatten_dotpath_tuples(dotpaths_to_unflatten, expected_dicts):
@@ -302,6 +317,17 @@ def test_unflatten_dotpath_tuples(dotpaths_to_unflatten, expected_dicts):
             },
             {
                 "foo": {"bar": 2, "foo2": 42, "foobar": 19},
+                "foobar": {"too_many_foos": 9001},
+            },
+        ),
+        (
+            {
+                "foo": {"bar": [2, 4], "foo2": 42},
+                "foo.foobar": [19, 21],
+                "foobar": {"too_many_foos": 9001},
+            },
+            {
+                "foo": {"bar": [2, 4], "foo2": 42, "foobar": [19, 21]},
                 "foobar": {"too_many_foos": 9001},
             },
         ),
