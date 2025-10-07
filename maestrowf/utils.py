@@ -30,6 +30,8 @@
 """A collection of more general utility functions."""
 
 from collections import OrderedDict
+from collections.abc import Mapping
+
 import coloredlogs
 import logging
 import os
@@ -43,6 +45,8 @@ import re
 from rich.pretty import pprint
 from packaging.version import parse as pkg_ver_parse
 from packaging.version import Version, InvalidVersion
+
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
@@ -389,7 +393,7 @@ def parse_version(version_string):
 
 def dict_to_dot_strings(dictionary, prefix='', result=None, print_none=True):
     """
-    Helper to convert dictionaries into dot syntax strings, e.g. convertin
+    Helper to convert dictionaries into dot syntax strings, e.g. converting
     from maestro's yaml into flux's treedict style syntax for more concise
     batch directives.
 
@@ -425,3 +429,97 @@ def dict_to_dot_strings(dictionary, prefix='', result=None, print_none=True):
             result.append(f"{current_key}={value}")
 
     return result
+
+
+def iter_dotpath_items(mapping: Mapping[str, Any], sep: str = ".", prefix: Optional[str] = None):
+    """
+    Yield (dotpath, value) pairs for all leaves in a nested mapping/dictionary.
+    Leaves are any non-mapping objects.
+
+    :param mapping: Mapping to flatten into list of dotpath strings
+    :type mapping: collections.abc.Mapping
+    :param sep: Optional separator used to join keys. Default = '.'
+    :type sep: str
+    :yields: Tuples of (dotpath, value)
+    :ytype: tuple[str, any]
+    """
+    if not isinstance(mapping, Mapping):
+        raise TypeError("iter_dotpath_items expects a mapping at the root")
+
+    def join(base: str, key: str) -> str:
+        """Helper to join two keys if non-terminal"""
+        return f"{base}{sep}{key}" if base else key
+
+    def walk(node: Any, base: str) -> Iterator[Tuple[str, Any]]:
+        """Recursively walk the mapping, depth first"""
+        if isinstance(node, Mapping):
+            for k, v in node.items():
+                ks = str(k)
+                yield from walk(v, join(base, ks))
+
+        else:
+            # Node is a leaf (anything but a mapping)
+            yield (base, node)
+
+    root = prefix or ""
+    yield from walk(mapping, root)
+
+
+def unflatten_dotpath_tuples(dotpaths: List[Tuple[str, Any]], sep: str = ".") -> Dict[str, Any]:
+    """
+    Flatten a list of (dotpath_string, value) back into a nested dictionary.
+
+    Note this does not account for '=value' being in the strings as the source
+    of this is expected to be dictionaries from the study spec in yaml, not a
+    fully rendered cli directives.
+
+    :param dotpaths: Tuple of dotpath string flattend dicts and values
+    :type dotpaths: Tuple[str, Any]
+    :param sep: Separator used to split dotpath strings into nested keys.
+                Default = "."
+    :type sep: str
+    :returns: nested dictionary view of the dotpath flattened input
+    
+    """
+    root: Dict[str, Any] = {}
+    for path, value in dotpaths:
+        segments = str(path).split(sep) if path else [""]
+        cursor: Dict[str, Any] = root
+        for seg in segments[:-1]:
+            if seg not in cursor or not isinstance(cursor[seg], dict):
+                cursor[seg] = {}
+            cursor = cursor[seg]
+
+        cursor[segments[-1]] = value
+
+    return root
+
+
+def unflatten_dotpath_dict(dotpath_dict: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
+    """
+    Flatten a dictionary that may contain dotpath encoded keys into a pure
+    nested dictionary.
+
+    Note this does not account for '=value' being in the strings as the source
+    of this is expected to be dictionaries from the study spec in yaml, not a
+    fully rendered cli directives.
+
+    :param dotpaths: Tuple of dotpath string flattend dicts and values
+    :type dotpaths: Tuple[str, Any]
+    :param sep: Separator used to split dotpath strings into nested keys.
+                Default = "."
+    :type sep: str
+    :returns: nested dictionary view of the dotpath flattened input    
+    """
+    root: Dict[str, Any] = {}
+    for path, value in dotpath_dict.items():
+        segments = str(path).split(sep) if path else [""]
+        cursor: Dict[str, Any] = root
+        for seg in segments[:-1]:
+            if seg not in cursor or not isinstance(cursor[seg], dict):
+                cursor[seg] = {}
+            cursor = cursor[seg]
+
+        cursor[segments[-1]] = value
+
+    return root

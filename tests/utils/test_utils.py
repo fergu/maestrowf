@@ -7,7 +7,14 @@ from rich.pretty import pprint
 
 from maestrowf.datastructures.core import ParameterGenerator
 from maestrowf.datastructures.core.parameters import Combination
-from maestrowf.utils import make_safe_path, parse_version, dict_to_dot_strings
+from maestrowf.utils import (
+    make_safe_path,
+    parse_version,
+    dict_to_dot_strings,
+    iter_dotpath_items,
+    unflatten_dotpath_tuples,
+    unflatten_dotpath_dict,
+)
 from packaging.version import Version, InvalidVersion
 
 from hypothesis import given, HealthCheck, settings, strategies
@@ -216,3 +223,95 @@ def test_dict_to_strings(dict_to_flatten, print_none, expected_strings):
     dot_strings = dict_to_dot_strings(dict_to_flatten, print_none=print_none)
 
     assert dot_strings == expected_strings
+
+@pytest.mark.parametrize(
+    "dict_to_flatten, expected_tuples",
+    [
+        (
+            {"foo": {"bar": 2}},
+            [("foo.bar", 2)],
+        ),
+        (
+            {"foo": {"bar": 2, "foo2": 42}},
+            [("foo.bar", 2), ("foo.foo2", 42)],
+        ),
+        (
+            {"foo": {"bar": 2, "foo3": None}},
+            [("foo.bar", 2), ("foo.foo3", None)],
+        ),
+        (
+            {
+                "foo": {"bar": 2, "foo2": 42},
+                "foobar": {"too_many_foos": 9001},
+                "foo.foobar": 19
+            },
+            [("foo.bar", 2), ("foo.foo2", 42), ("foobar.too_many_foos", 9001), ("foo.foobar", 19)],
+        ),
+    ],
+)
+def test_dict_to_dotpath_tuples(dict_to_flatten, expected_tuples):
+    """
+    Test flattening of dictionaries to lists of dot syntax strings
+    """
+    dotpath_tuples = list(iter_dotpath_items(dict_to_flatten))
+
+    assert dotpath_tuples == expected_tuples
+
+
+@pytest.mark.parametrize(
+    "dotpaths_to_unflatten, expected_dicts",
+    [
+        (
+            [("foo.bar", 2)],
+            {"foo": {"bar": 2}},
+        ),
+        (
+            [("foo.bar", 2), ("foo.foo2", 42)],
+            {"foo": {"bar": 2, "foo2": 42}},
+        ),
+        (
+            [("foo.bar", 2), ("foo.foo3", None)],
+            {"foo": {"bar": 2, "foo3": None}},
+        ),
+        (
+            [("foo.bar", 2), ("foo.foo2", 42), ("foobar.too_many_foos", 9001), ("foo.foobar", 19)],
+            {
+                "foo": {"bar": 2, "foo2": 42, "foobar": 19},
+                "foobar": {"too_many_foos": 9001},
+            },
+        ),
+    ],
+)
+def test_unflatten_dotpath_tuples(dotpaths_to_unflatten, expected_dicts):
+    """
+    Test unflattening of mixed dotpath tuples to nested dicts
+    """
+    unflattened_dict = unflatten_dotpath_tuples(dotpaths_to_unflatten)
+
+    assert unflattened_dict == expected_dicts
+
+
+@pytest.mark.parametrize(
+    "dict_to_flatten, expected_dict",
+    [
+        (
+            {
+                "foo": {"bar": 2, "foo2": 42},
+                "foo.foobar": 19,
+                "foobar": {"too_many_foos": 9001},
+            },
+            {
+                "foo": {"bar": 2, "foo2": 42, "foobar": 19},
+                "foobar": {"too_many_foos": 9001},
+            },
+        ),
+    ],
+)
+def test_unflatten_dotpath_dict(dict_to_flatten, expected_dict):
+    """
+    Test unflattening dicts that may have dotpath style keys to pure
+    dictionary
+    """
+    flattened_dict = unflatten_dotpath_dict(dict_to_flatten)
+
+    assert flattened_dict == expected_dict
