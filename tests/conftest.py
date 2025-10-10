@@ -7,6 +7,7 @@ import re
 import shutil
 from subprocess import check_output
 
+import pprint
 import pytest
 
 from maestrowf.datastructures.core import Study
@@ -345,7 +346,7 @@ def text_diff():
 
 @pytest.mark.sched_flux
 @pytest.fixture
-def flux_jobspec_check():
+def flux_jobspec_check(request):
     import flux
 
     def _diff_jobspec_keys(jobid, expected, path=None):
@@ -398,6 +399,12 @@ def flux_jobspec_check():
                         f"expected {expected_value!r}, got {actual_value!r}"
                     )
 
-        assert_nested_dict_subset(jobspec, expected, path=path)
+        try:
+            assert_nested_dict_subset(jobspec, expected, path=path)
+        except AssertionError:
+            jobspec_str = pprint.pformat(jobspec, width=80)
+            request.node.add_report_section(
+                "call", "jobspec", f"\n=== Jobspec dump on failure for job {jobid} ===\n{jobspec_str}\n=== End jobspec dump ===\n")
+            raise
 
     return _diff_jobspec_keys
