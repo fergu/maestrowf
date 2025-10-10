@@ -336,7 +336,7 @@ def text_diff():
             )
 
             diff = "\n".join(diff)
-            pytest.fail(f"Text streams differ (ignoring marked lines):\n{diff}")
+            raise AssertionError(f"Text streams differ (ignoring marked lines):\n{diff}")
 
         return True
 
