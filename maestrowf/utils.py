@@ -46,7 +46,7 @@ from rich.pretty import pprint
 from packaging.version import parse as pkg_ver_parse
 from packaging.version import Version, InvalidVersion
 
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
@@ -523,3 +523,21 @@ def unflatten_dotpath_dict(dotpath_dict: Dict[str, Any], sep: str = ".") -> Dict
         cursor[segments[-1]] = value
 
     return root
+
+
+def coerce_dict_values(obj_to_transform: Any, transform: Callable)-> Dict:
+    if isinstance(obj_to_transform, Mapping):
+        return {k: coerce_dict_values(v, transform)
+                for k, v in obj_to_transform.items()}
+
+    # Return transformed leaf
+    return transform(obj_to_transform)
+
+
+def update_recursive(base_dict, update_dict):
+    for k, v in update_dict.items():
+        if k in base_dict and isinstance(base_dict[k], dict) and isinstance(v, dict):
+            update_recursive(base_dict[k], v)
+        else:
+            base_dict[k] = v
+    return base_dict

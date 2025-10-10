@@ -14,6 +14,7 @@ from maestrowf.utils import (
     iter_dotpath_items,
     unflatten_dotpath_tuples,
     unflatten_dotpath_dict,
+    coerce_dict_values
 )
 from packaging.version import Version, InvalidVersion
 
@@ -341,3 +342,32 @@ def test_unflatten_dotpath_dict(dict_to_flatten, expected_dict):
     flattened_dict = unflatten_dotpath_dict(dict_to_flatten)
 
     assert flattened_dict == expected_dict
+
+
+@pytest.mark.parametrize(
+    "dict_to_coerce, transform, expected_dict",
+    [
+        (
+            {
+                "foo": {"bar": 2, "foo2": None},
+                "foobar": None,
+                "foobar2": 3
+            },
+            (lambda x: 1 if x is None else x),
+            {
+                "foo": {"bar": 2, "foo2": 1},
+                "foobar": 1,
+                "foobar2": 3
+            },
+        ),
+    ],
+)
+def test_coerce_dict_values(dict_to_coerce, transform, expected_dict):
+    """
+    Test unflattening dicts that may have dotpath style keys to pure
+    dictionary
+    """
+    coerced_dict = coerce_dict_values(dict_to_coerce, transform)
+    
+    assert coerced_dict == expected_dict
+    assert coerced_dict != dict_to_coerce
