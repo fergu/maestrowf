@@ -39,6 +39,8 @@ from maestrowf.interfaces.script import CancellationRecord, SubmissionRecord, \
     FluxFactory
 from maestrowf.utils import make_safe_path
 
+from rich.pretty import pprint
+
 LOGGER = logging.getLogger(__name__)
 status_re = re.compile(r"Job \d+ status: (.*)$")
 # env_filter = re.compile(r"^(SSH_|LSF)")
@@ -100,35 +102,19 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         self._launcher_args = kwargs.get("launcher_args", {})
         self._addl_args = kwargs.get("args", {})
 
+        # Normalize the allocation and launcher args to a flat dict, removing dotpath encoding
+        # TODO: workon a validation api that can be hooked up to yamlspec ingestion machinery for
+        # early error messaging
+        if self._allocation_args:
+            self._allocation_args = self._interface.normalize_additional_args(self._allocation_args)
+            # pprint(f"{self._allocation_args=}")
+
+        if self._launcher_args:
+            self._launcher_args = self._interface.normalize_additional_args(self._launcher_args)
+            # pprint(f"{self._launcher_args=}")
         
-        # Setup prefixes associated with each kind of option for routing to
-        # appropriate jobspec api's
-        # Additional args can pass through on launcher only, using rule of
-        # verbose has '--' prefix, '=' flag/value separator and
-        # brief has '-' prefix, ' ' flag/value seaprator: e.g.
-        # --setattr=foo=bar, or -S foo=bar
-        self._brief_arg_info = {"prefix": "-", "sep": " "}
-        self._verbose_arg_info = {"prefix": "--", "sep": "="}
-
-        # Setup known arg types
-        self._known_alloc_arg_types = ["attributes", "shell_options", "conf"]
-        self._allocation_args_map = {
-            "setopt": "shell_options",
-            "o": "shell_options",
-            "setattr": "attributes",
-            "S": "attributes",
-            "conf": "conf",
-        }
-
-        # setup template string that all flux cli args/batch directives use for rendering
-        self._flux_arg_str = "{prefix}{key}{sep}{value}"
-        
-        self._attr_prefixes = ['S', 'setattr']
-        self._opts_prefixes = ['o', 'setopt']
-        self._conf_prefixes = ['conf']  # No abbreviated form for this in flux docs
-
-        # Add --setattr fields to batch job/broker; default to "" such
-        # that 'truthiness' can exclude them from the jobspec if not provided
+        # Default queue/bank to "" such that 'truthiness' can exclude them
+        # from the jobspec/scripts if not provided
         queue = kwargs.pop("queue", "")
         bank = kwargs.pop("bank", "")
         available_queues = self._interface.get_broker_queues()
@@ -142,6 +128,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             )
             queue = ""
 
+        # NOTE: if system is omitted, flux defaults to adding that prefix
         self._batch_attrs = {
             "system.queue": queue,
             "system.bank": bank,
@@ -239,38 +226,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             LOGGER.error(msg)
             raise ValueError(msg)
 
-    def render_additional_args(self, args_dict):
-        """
-        Helper to render additional argument sets to flux cli format for
-        use in constructing $(LAUNCHER) line and flux batch directives.
-
-        :param args_dict: Dictionary of flux arg keys and name: value pairs
-        """
-        def arg_info_type(arg_key):
-            if len(arg_key) == 1:
-                return {"prefix": "-", "sep": " "}
-            else:
-                return {"prefix": "--", "sep": "="}
-
-        def render_arg_value(arg_name, arg_value):
-            # Handling for flag type values, e.g. -o fastload
-            if arg_value:
-                return f"{arg_name}={arg_value}"
-            else:
-                return f"{arg_name}"
-
-        for arg_key, arg_value in args_dict.items():
-            arg_info = arg_info_type(arg_key)
-
-            for av_name, av_value in arg_value.items():
-                value_str = render_arg_value(av_name, av_value)
-                yield "{prefix}{key}{sep}{value}".format(
-                    prefix=arg_info['prefix'],
-                    key=arg_key,
-                    sep=arg_info['sep'],
-                    value=value_str
-                )
-
     def pack_addtl_batch_args(self):
         """
         Normalize the allocation args and pack up into the interface specific
@@ -289,7 +244,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             if arg_type is None:
                 # NO WARNINGS HERE: args in 'misc' type handled elsewhere
                 # TODO: add better mechanism for tracking whicn args
-                #       actually get used; dicts can't do this..
+                #       actually get used; dicts can'ppt do this..
                 continue
 
             new_arg_values = arg_values
@@ -326,6 +281,10 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         batch_header["job-name"] = step.name.replace(" ", "_")
         batch_header["comment"] = step.description.replace("\n", " ")
         batch_header["flux_version"] = self._broker_version
+
+        # Handle queue -> omit if anonymous queue was detected
+        if not batch_header["queue"]:
+            batch_header.pop("queue")  # Should we also pop bank here?
 
         modified_header = ["#!{}".format(self._exec)]
         for key, value in self._header.items():
@@ -462,13 +421,42 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         # it's in the step maybe, leaving each adapter to retain their defaults?
         waitable = step.run.get("waitable", False)
 
+        # Normalize the allocation args to api flux.job.JobspecV1 expects
+        packed_alloc_args = self._interface.pack_addtl_batch_args(self._allocation_args)
+        # print(f"{normalized_alloc_args=}")
+
+        # Setup placholder for the queue/bank attributes if no already added by user
+        # in the allocation_args
+        # NOTE: should we flatten these treedict style?  conf looks like no treedict, but
+        # the others look like they support it even via python api
+        # if "system" not in normalized_alloc_args["attributes"]:
+        #     normalized_alloc_args["attributes"]["system"] = {}
+
+        # Add queue and bank
+        queue = self._batch["queue"]
+        if queue == "":
+            queue = None
+        bank = self._batch["bank"]
+        if bank == "":
+            bank = None
+
+        # if self._batch["queue"]:
+        #     normalized_alloc_args["attributes"]["system"]["queue"] = self._batch["queue"]
+        # if self._batch["bank"]:
+        #     # TODO: revisit whether it makes sense to add bank if queue is empty ->
+        #     #       nested brokers usually have neither, and bank falls through silently..
+        #     normalized_alloc_args["attributes"]["system"]["bank"] = self._batch["bank"]
+
+        # pprint(f"Packed alloc args for {step.name}:")
+        # pprint(packed_alloc_args)
         jobid, retcode, submit_status = \
             self._interface.submit(
                 nodes, processors, cores_per_task, path, cwd, walltime, ngpus,
                 job_name=step.name, force_broker=force_broker, urgency=urgency,
                 waitable=waitable,
-                addtl_batch_args=self.pack_addtl_batch_args(),
-                exclusive=step_exclusive['allocation']
+                addtl_batch_args=packed_alloc_args, #self.pack_addtl_batch_args(),
+                exclusive=step_exclusive['allocation'],
+                
             )
 
         return SubmissionRecord(submit_status, retcode, jobid)

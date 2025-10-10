@@ -10,8 +10,15 @@ from maestrowf.abstracts.enums import (
     SubmissionCode,
 )
 from maestrowf.abstracts.interfaces.flux import FluxInterface
-from maestrowf.utils import dict_to_dot_strings
+from maestrowf.utils import (
+    dict_to_dot_strings,
+    iter_dotpath_items,
+    unflatten_dotpath_dict,
+    coerce_dict_values,
+    update_recursive
+)
 
+from rich.pretty import pprint
 LOGGER = logging.getLogger(__name__)
 
 try:
@@ -42,6 +49,11 @@ class FluxInterface_0490(FluxInterface):
         "setattr": "attributes",
         "S": "attributes",
         "conf": "conf",
+    }
+    _addtl_arg_cli_key = {
+        "attributes": "setattr",
+        "shell_options": "setopt",
+        "conf": "conf"
     }
 
     @classmethod
@@ -74,6 +86,30 @@ class FluxInterface_0490(FluxInterface):
         return cls._addtl_alloc_arg_type_map.get(option, None)
 
     @classmethod
+    def get_addtl_arg_cli_key(cls, arg_type):
+        """
+        Return expected cli key associated with each normalized arg type.
+        `arg_type` not in known_arg_types are assumed to be the key already
+        to facilitate flexible pass through to launcher
+
+        :param arg_type: string noting arg group or cli key
+        :returns: cli key used for this arg
+
+        .. note::
+
+           Can we find a reasonable default prefix (where are things put
+           by default in flux, attributes.system?)
+        """
+        if arg_type in cls.known_alloc_arg_types:
+            return cls._addtl_arg_cli_key.get(arg_type)
+
+        elif arg_type in cls._addtl_alloc_arg_type_map:
+            return cls._addtl_arg_cli_key.get(cls._addtl_alloc_arg_type_map[arg_type])
+
+        else:
+            return arg_type
+
+    @classmethod
     def get_flux_urgency(cls, urgency) -> int:
         if isinstance(urgency, str):
             LOGGER.debug("Found string urgency: %s", urgency)
@@ -100,38 +136,110 @@ class FluxInterface_0490(FluxInterface):
            Promote this to the general/base adapters to handle non-normalizable
            scheduler/machine specific options
         """
-        def arg_info_type(arg_key):
-            if len(arg_key) == 1:
-                return {"prefix": "-", "sep": " "}
-            else:
-                return {"prefix": "--", "sep": "="}
 
-        def render_arg_value(arg_name, arg_value):
-            # Handling for flag type values, e.g. -o fastload
-            if arg_value:
-                return f"{arg_name}={arg_value}"
-            else:
-                return f"{arg_name}"
-
+        base_render_tmpl = "{prefix}{cli_key}{sep}{dotpath}"
+        value_render_tmpl = "={value}"
         for arg_key, arg_value in args_dict.items():
-            arg_info = arg_info_type(arg_key)
+            # Get the cli key and associated rendering info
+            cli_key = cls.get_addtl_arg_cli_key(arg_key)
+            cli_info = cls.get_cli_arg_prefix_sep(cli_key)
 
-            dot_string_args = dict_to_dot_strings(arg_value, print_none=False)
-            for dot_string_arg in dot_string_args:
-                yield "{prefix}{key}{sep}{dotstringvalue}".format(
-                    prefix=arg_info['prefix'],
-                    key=arg_key,
-                    sep=arg_info['sep'],
-                    dotstringvalue=dot_string_arg
+            # Note: dotpath encoding comes after the group/prefix (setattr, ...)
+            for dotpath, value in iter_dotpath_items(arg_value):
+                # print(f"{dotpath=} {value=}")
+                rendered_opt = base_render_tmpl.format(
+                    prefix=cli_info['prefix'],
+                        cli_key=cli_key,
+                        sep=cli_info['sep'],
+                        dotpath=dotpath
                 )
-            # for av_name, av_value in arg_value.items():
-            #     value_str = render_arg_value(av_name, av_value)
-            #     yield "{prefix}{key}{sep}{value}".format(
-            #         prefix=arg_info['prefix'],
-            #         key=arg_key,
-            #         sep=arg_info['sep'],
-            #         value=value_str
-            #     )
+
+                # Flag types have None, and we want to exclude it from launcher
+                # and headers to better match interactive use omitting '=None'
+                if value:
+                    rendered_opt += value_render_tmpl.format(value=value)
+
+                yield rendered_opt
+
+    @classmethod
+    def normalize_additional_args(cls, args_dict):
+        """
+        Helper to normalize additional arguments to known types and an
+        unflattened nested dictionary structure.  This unflattens any
+        dotpath encoded nested dictionary keys.
+
+        :param args_dict: Dictionary of flux arg keys and name: value pairs
+        :return: dict of packed args with top level keys being the adapter
+                 version specific addtl_alloc_arg_types
+        """
+        # First, normalize and unflatten everything into dicts
+        # print(f"original_additional_args: {args_dict=}")
+        unflattened_batch_args = {
+            arg_type: {}
+            for arg_type in cls.addtl_alloc_arg_types()
+        }
+
+        for arg_key, arg_values in args_dict.items():
+            arg_type = cls.addtl_alloc_arg_type_map(arg_key)
+            # print(f"normalize_additional_args: {arg_key=} -> {arg_type=}")
+            if arg_type is None:
+                # We only restrict for allocations, so defer logging/rejection
+                # of types not handled by jobspec builder
+                arg_type = arg_key
+
+            if isinstance(arg_values, dict):
+                unflattened_batch_arg = {arg_type: unflatten_dotpath_dict(arg_values)}
+                # unflattened_batch_args[arg_key] = unflatten_dotpath_dict(arg_values)
+            else:
+                unflattened_batch_arg = {arg_type: arg_values}
+                # unflattened_batch_args[arg_key] = arg_values
+
+            # Update to ensure we don't clobber prior values
+            # print(f"pre-update  unflattened_batch_args: {unflattened_batch_args=}")
+            unflattened_batch_args = update_recursive(unflattened_batch_args,
+                                                      unflattened_batch_arg)
+        #     print(f"post-update unflattened_batch_args: {unflattened_batch_args=}")
+
+        # print(f"normalized_additional_args: {unflattened_batch_args=}")
+        return unflattened_batch_args
+
+    @classmethod
+    def pack_addtl_batch_args(cls, args_dict):
+        """
+        Normalize the allocation args and pack up into the interface specific
+        groups that have assocated jobspec methods, e.g. conf, setattr, setopt.
+        Ensure arg formats match their end point's types.  For current flux
+        versions as of 0.78.0: setattr and setopt require dicts be flattened
+        into lists of dotpath encoded strings and values, while conf requires
+        a completely unflattened dict.
+
+        :param args_dict: Dict with keys normalized to cls.addtl_alloc_arg_types
+        :return: dictionary of allocation arg groups to attach to jobspecs
+        """
+        # Normalize None values common in flag inputs for use in python api
+        # see https://github.com/flux-framework/flux-core/blob/a3860d4dea5b5a17c473cff4385276e882275252/src/bindings/python/flux/cli/base.py#L734
+        # NOTE: only doing this in alloc; LAUNCHER cli passes through
+        #       to flux cli (None values are omittied, e.g.
+        #       {o: fastload: None} renders to -o fastload
+        #       Python api doesn't appear to have default value handling?
+        packed_batch_args = {
+            arg_type: {}
+            for arg_type in cls.addtl_alloc_arg_types()
+        }
+
+        dotpath_format = ["attributes", "shell_options"]
+
+        for arg_key, arg_values in args_dict.items():
+            coerced_vals = coerce_dict_values(arg_values,
+                                              lambda x: 1 if x is None else x)
+            if arg_key in dotpath_format:
+                group_values = list(iter_dotpath_items(coerced_vals))
+            else:
+                group_values = coerced_vals
+
+            packed_batch_args[arg_key] = group_values
+
+        return packed_batch_args
 
     @classmethod
     def submit(
@@ -147,6 +255,8 @@ class FluxInterface_0490(FluxInterface):
         force_broker=True,
         urgency=StepPriority.MEDIUM,
         waitable=False,
+        queue=None,
+        bank=None,
         addtl_batch_args=None,
         exclusive=False,
         **kwargs,
@@ -155,11 +265,11 @@ class FluxInterface_0490(FluxInterface):
         if addtl_batch_args is None:
             addtl_batch_args = {}
 
-        # May want to also support setattr_shell_option at some point?
-        for batch_arg_type in ["attributes", "shell_options", "conf"]:
+            # May want to also support setattr_shell_option at some point?
+            for batch_arg_type in cls.addtl_alloc_arg_types(): #["attributes", "shell_options", "conf"]:
 
-            if batch_arg_type not in addtl_batch_args:
-                addtl_batch_args[batch_arg_type] = {}
+                if batch_arg_type not in addtl_batch_args:
+                    addtl_batch_args[batch_arg_type] = {}
 
         try:
             # TODO: add better error handling/throwing in the class func
@@ -175,11 +285,12 @@ class FluxInterface_0490(FluxInterface):
             # that can force a single node to run in a broker.
 
             # Attach any conf inputs to the jobspec
-            if "conf" in addtl_batch_args:
-                conf_dict = addtl_batch_args['conf']
+            conf_dict = addtl_batch_args.get('conf', None)
+            # if "conf" in addtl_batch_args:
+            #     conf_dict = addtl_batch_args['conf']
 
-            else:
-                conf_dict = None
+            # else:
+            #     conf_dict = None
                 
             if force_broker:
                 LOGGER.debug(
@@ -199,6 +310,8 @@ class FluxInterface_0490(FluxInterface):
                     gpus_per_slot=ngpus_per_slot,
                     conf=conf_dict,
                     exclusive=exclusive,
+                    queue=queue,
+                    bank=bank
                 )
             else:
                 if conf_dict:
@@ -216,7 +329,9 @@ class FluxInterface_0490(FluxInterface):
                     num_nodes=nodes,
                     cores_per_task=cores_per_task,
                     gpus_per_task=ngpus,
-                    exclusive=exclusive
+                    exclusive=exclusive,
+                    queue=queue,
+                    bank=bank
                 )
 
             LOGGER.debug("Handle address -- %s", hex(id(cls.flux_handle)))
@@ -227,26 +342,33 @@ class FluxInterface_0490(FluxInterface):
             jobspec.cwd = cwd
             jobspec.environment = dict(os.environ)
 
-            # Slurp in extra attributes if not null (queue, bank, ..)
+            # Slurp in extra attributes if not null
             # (-S/--setattr)
-            for batch_attr_name, batch_attr_value in addtl_batch_args["attributes"].items():
-                if batch_attr_value:
-                    jobspec.setattr(batch_attr_name, batch_attr_value)
-                else:
-                    LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
-                                " for attribute '%s'. Omitting from jobspec.",
-                                batch_attr_value,
-                                batch_attr_name)
+            # NOTE: these are sanitized upstream to be dotpath, value tuples
+            for batch_attr_dotpath, batch_attr_value in addtl_batch_args["attributes"]:
+                # pprint(f"Setting {batch_attr_dotpath}:")
+                # pprint(batch_attr_value)
+                jobspec.setattr(batch_attr_dotpath, batch_attr_value)
+                # pprint(jobspec.dumps())
+                # else:
+                #     pprint(f"Flux adapter v0.49 received null value of '{batch_attr_value}'"
+                #            f" for attribute '{batch_attr_dotpath}'. Omitting from jobspec.")
+                    
+                #     LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
+                #                 " for attribute '%s'. Omitting from jobspec.",
+                #                 batch_attr_value,
+                #                 batch_attr_dotpath)
 
             # Add in job shell options if not null (-o/--setopt)
-            for batch_opt_name, batch_opt_value in addtl_batch_args["shell_options"].items():
-                if batch_opt_value:
-                    jobspec.setattr_shell_option(batch_opt_name, batch_opt_value)
-                else:
-                    LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
-                                " for shell option '%s'. Omitting from jobspec.",
-                                batch_opt_value,
-                                batch_opt_name)
+            # NOTE: these are sanitized upstream to be dotpath, value tuples
+            for batch_opt_dotpath, batch_opt_value in addtl_batch_args["shell_options"]:
+                # if batch_opt_value:
+                jobspec.setattr_shell_option(batch_opt_dotpath, batch_opt_value)
+                # else:
+                #     LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
+                #                 " for shell option '%s'. Omitting from jobspec.",
+                #                 batch_opt_value,
+                #                 batch_opt_dotpath)
             
             if walltime > 0:
                 jobspec.duration = walltime

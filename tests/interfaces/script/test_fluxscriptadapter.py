@@ -97,7 +97,7 @@ def test_flux_script_serialization(
         tmp_path                # Pytest tmp dir fixture: Path()):
 ):
     spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
-    pprint(spec_path)
+    # pprint(spec_path)
     yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
 
     study: Study = load_study(spec_path, tmp_path, dry_run=True)
@@ -156,10 +156,12 @@ def test_flux_script_serialization(
                             'shell': {
                                 'options': {'bar': 42, 'foo': 'bar'},
                             },
+                            'queue': 'pdebug',
+                            'bank': 'guests',
                             'files': {
-                                'conf.json': {'data': {'resource': {'rediscover': True}}}
+                                'conf.json': {'data': {'resource': {'rediscover': "true"}}}
                             },
-                            'gpumode': 'SPC'
+                            'gpumode': 'SPX'
                         }
                     }
                 },
