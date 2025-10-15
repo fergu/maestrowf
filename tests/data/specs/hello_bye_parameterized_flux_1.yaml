@@ -5,7 +5,7 @@ description:
 batch:
     type        : flux
     host        : rzadams
-    bank        : guests
+    bank        : ecopper
     queue       : pdebug
     allocation_args:
       setopt:                   # > 1 letter gets '--' prefix: --setopt foo=true

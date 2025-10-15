@@ -147,7 +147,7 @@ def test_flux_script_serialization(
     [
         (
             "hello_bye_parameterized_flux",
-            1,
+            2,                  # Use the invalid queue one to avoid waiting for jobs to run
             {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
                 "hello_world_GREETING.Hello.NAME.Pam": {
                     'resources': [{'exclusive': True}],
@@ -157,11 +157,11 @@ def test_flux_script_serialization(
                                 'options': {'bar': 42, 'foo': 'bar'},
                             },
                             'queue': 'pdebug',
-                            'bank': 'guests',
+                            'bank': 'invalid_bank',
                             'files': {
-                                'conf.json': {'data': {'resource': {'rediscover': "true"}}}
+                                'conf.json': {'data': {'resource': {'rediscover': "true"}, "noverify": "true"}}
                             },
-                            'gpumode': 'SPX'
+                            'gpumode': 'CPX'
                         }
                     }
                 },
@@ -221,5 +221,3 @@ def test_flux_job_opts(
         # pprint("Written script:")
 
         # assert step_name in expected_batch_files
-
-    assert False

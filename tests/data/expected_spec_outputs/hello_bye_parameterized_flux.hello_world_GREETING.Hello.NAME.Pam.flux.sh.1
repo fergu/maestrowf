@@ -2,14 +2,12 @@
 #flux: -N 1
 #flux: -t 60.0s
 #flux: -q pdebug
-#flux: --bank guests
+#flux: --bank ecopper
 #flux: --exclusive
 #flux: --setopt=foo=bar
 #flux: -o bar=42
 #flux: --setattr=gpumode=CPX
 #flux: --conf=resource.rediscover=true
-#INFO (flux adapter version) 0.49.0
-#INFO (flux version) 0.76.0
 
 flux run -n 1 -N 1 -c 1 --setopt=fastload echo "Hello, Pam!" > Hello_Pam.txt
 flux run -n 1 -N 1 -c 1 --setopt=fastload sleep 1
