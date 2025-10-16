@@ -526,6 +526,25 @@ def unflatten_dotpath_dict(dotpath_dict: Dict[str, Any], sep: str = ".") -> Dict
 
 
 def coerce_dict_values(obj_to_transform: Any, transform: Callable)-> Dict:
+    """
+    Recursively apply a transformation function to all values in a nested mapping.
+
+    Traverses the input object, recursively applying the given transformation function
+    to each leaf value. If the input is a mapping (such as a dictionary), the function
+    will process each value in the mapping. Non-mapping values are transformed directly.
+
+    This is useful for cases where you need to sanitize or coerce certain values
+    throughout a deeply nested dictionary structure. For example, the Flux CLI
+    converts ``None`` values to ``1`` for treedict inputs that represent flags.
+    This function can be used to replicate that behavior in the Python API.
+
+    :param obj_to_transform: The object to transform. Can be a mapping or any other value.
+    :type obj_to_transform: Any
+    :param transform: A callable that takes a single value and returns the transformed value.
+    :type transform: Callable
+    :return: A new mapping with the same structure as the input, but with all leaf values transformed.
+    :rtype: dict
+    """
     if isinstance(obj_to_transform, Mapping):
         return {k: coerce_dict_values(v, transform)
                 for k, v in obj_to_transform.items()}
@@ -535,6 +554,24 @@ def coerce_dict_values(obj_to_transform: Any, transform: Callable)-> Dict:
 
 
 def update_recursive(base_dict, update_dict):
+    """
+    Recursively update a dictionary with values from another dictionary.
+
+    For each key in ``update_dict``, updates the corresponding value in ``base_dict``.
+    If both values for a given key are dictionaries, the update is performed recursively.
+    Otherwise, the value from ``update_dict`` overwrites the value in ``base_dict``.
+
+    :param base_dict: The dictionary to update in-place.
+    :type base_dict: dict
+    :param update_dict: The dictionary containing updates.
+    :type update_dict: dict
+    :return: The updated base dictionary.
+    :rtype: dict
+
+    .. note::
+        If a key exists in both dictionaries but the values are not both dicts,
+        the value from ``update_dict`` will overwrite the value in ``base_dict``.
+    """
     for k, v in update_dict.items():
         if k in base_dict and isinstance(base_dict[k], dict) and isinstance(v, dict):
             update_recursive(base_dict[k], v)

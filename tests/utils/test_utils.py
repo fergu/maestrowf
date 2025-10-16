@@ -14,7 +14,8 @@ from maestrowf.utils import (
     iter_dotpath_items,
     unflatten_dotpath_tuples,
     unflatten_dotpath_dict,
-    coerce_dict_values
+    coerce_dict_values,
+    update_recursive
 )
 from packaging.version import Version, InvalidVersion
 
@@ -371,3 +372,46 @@ def test_coerce_dict_values(dict_to_coerce, transform, expected_dict):
     
     assert coerced_dict == expected_dict
     assert coerced_dict != dict_to_coerce
+
+@pytest.mark.parametrize(
+    "base_dict, update_dict, expected",
+    [
+        # Simple overwrite
+        (
+            {"a": 1, "b": 2},
+            {"b": 3, "c": 4},
+            {"a": 1, "b": 3, "c": 4}
+        ),
+        # Nested dictionary merge (recursive)
+        (
+            {"a": {"b": 1, "c": 2}},
+            {"a": {"c": 3, "d": 4}},
+            {"a": {"b": 1, "c": 3, "d": 4}}
+        ),
+        # Overwrite with non-dict in update_dict
+        (
+            {"a": {"b": 1}, "c": 2},
+            {"a": 42},
+            {"a": 42, "c": 2}
+        ),
+        # Deeply nested merge
+        (
+            {"a": {"b": {"c": 1}}},
+            {"a": {"b": {"d": 2}}},
+            {"a": {"b": {"c": 1, "d": 2}}}
+        ),
+        # Mixed: recursive merge and overwrite
+        (
+            {"x": {"y": 1}, "z": 10},
+            {"x": {"y": 2, "w": 3}, "z": {"nested": 5}},
+            {"x": {"y": 2, "w": 3}, "z": {"nested": 5}}
+        ),
+    ]
+)
+def test_update_recursive(base_dict, update_dict, expected):
+    # Use deepcopy to avoid mutating test data
+    # base = deepcopy(base_dict)
+    result = update_recursive(base_dict, update_dict)
+    assert result == expected
+    # Also check that base itself was mutated as expected
+    assert base_dict == expected
