@@ -410,8 +410,7 @@ def test_coerce_dict_values(dict_to_coerce, transform, expected_dict):
 )
 def test_update_recursive(base_dict, update_dict, expected):
     # Use deepcopy to avoid mutating test data
-    # base = deepcopy(base_dict)
     result = update_recursive(base_dict, update_dict)
     assert result == expected
-    # Also check that base itself was mutated as expected
+    # Also check that base_dict itself was mutated as expected
     assert base_dict == expected
