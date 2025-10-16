@@ -176,7 +176,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             # NOTE: always use seconds to guard against upstream default behavior changes
             "walltime": f"{self._flux_directive}" + "-t {walltime}s",
             "queue": f"{self._flux_directive}" + "-q {queue}",
-            "bank": f"{self._flux_directive}" + "--bank {bank}",
+            "bank": f"{self._flux_directive}" + "--bank={bank}",
 
         }
 
@@ -287,6 +287,15 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             batch_header.pop("queue")  # Should we also pop bank here?
 
         modified_header = ["#!{}".format(self._exec)]
+
+        # Process INFO lines at the start to 
+        # lines starting tag+prefix (e.g. "#flux:" ) that doesn't match the flux directives
+        for key, value in self._header_info.items():
+            modified_header.append(value.format(**batch_header))
+
+        # Inject a blank # comment line between the flux directives for readability
+        modified_header.append("#")
+
         for key, value in self._header.items():
             if key not in batch_header:
                 continue
@@ -309,11 +318,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
                 # Silent pass through for old versions which don't implement any
                 # interface for batch/allocation args
                 modified_header.append(f"{self._flux_directive}" + rendered_arg)
-
-        # Process INFO lines at the end: flux stops parsing directives after any
-        # lines starting tag+prefix (e.g. "#flux:" ) that doesn't match the flux directives
-        for key, value in self._header_info.items():
-            modified_header.append(value.format(**batch_header))
 
         return "\n".join(modified_header)
 
