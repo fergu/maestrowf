@@ -52,16 +52,18 @@ There are new groups in the batch block in :material-tag:`1.1.12` that facilitat
 * `allocation_args` for the allocation target (batch directives such as `#Flux: --setopt=foo=bar`)
 * `launcher_args` for the `$(LAUNCHER)` target (`flux run --setopt=foo=bar`)
 
-These are ~structured mappings which are designed to mimic cli usage for intuitive mapping from raw scheduler usage to Maestro.  Each of these dictionaries' keys correspond to a scheduler specific CLI argument/option or flag.  The serialization rules are as follows, with specific examples here shown for the initial implementation in the flux adapter (other schedulers will yield prefix/separator rules specific to their implementation):
+These are ~structured mappings which are designed to mimic cli and batch script directive syntax for intuitive mapping from raw scheduler usage to Maestro.  Each of these dictionaries' keys correspond to a scheduler specific CLI argument/option or flag.  The serialization rules are as follows, with specific examples here shown for the initial implementation in the flux adapter (other schedulers will yield prefix/separator rules specific to their implementation):
 
-|  **Key Type**   | **CLI Prefix** | **Separator** | **Example YAML**    | **Example CLI Output** |
-|    :-           | :-:            |     :-:       |    :-:              |       :-               |
-|  Single letter  |  `-`           | space (`" "`) | `o: {bar: 42}`      | `-o bar=42`            |
-|  Multi-letter   | `--`           |  `=`          | `setopt: {foo: bar} | `--setopt=foo=bar`     |
-|  Boolean flag w/key   | as above       | as above      | `setopt: {foobar: } | `--setopt=foobar`      |
-|  Boolean flag w/o key   | as above       | as above      | `exclusive: ` | `--exclusive`      |
+|  **Key Type**         | **Prefix** | **Separator** | **Example YAML**     | **Example CLI Input/Directive** |
+|    :-                 | :-            | :-       |    :-                |       :-               |
+|  Single letter        |  `-`           | `" "` (space) | `o: {bar: 42}`       | `-o bar=42`            |
+|  Multi-letter         | `--`           |  `=`          | `setopt: {foo: bar}` | `--setopt=foo=bar`     |
+|  Boolean flag w/key   | as above       | as above      | `setopt: {foobar: }` | `--setopt=foobar`      |
+|  Boolean flag w/o key | as above       | as above      | `exclusive: `        | `--exclusive`      |
 
-Note in the boolean flag strategies, a space is required after the `:` after `foobar: ` or `exclusive`, otherwise yaml will fail to parse and assign the Null value used to tag a key as a boolean flag.  See [flux](#Flux) for special considerations fo the `allocation_args`
+!!! note "Boolean/Flag type arguments"
+
+    In the boolean flag strategies, a space is required after the `:` after `foobar: ` or `exclusive`, otherwise yaml will fail to parse and assign the Null value used to tag a key as a boolean flag.  See [flux](#Flux) for special considerations for the `allocation_args`. 
 
 
 ## LAUNCHER Token
@@ -259,7 +261,7 @@ Assuming the step has keys `{procs: 1, nodes: 1, cores per task: 1, walltime: "5
 #flux: --bank=guests
 #flux: -t 300s
 #flux: --setopt=foo=bar
-#flux: -o bar=42
+#flux: --setopt=bar=42
 #flux: --setattr=foobar=whoops
 #flux: --conf=resource.rediscover=true
 
@@ -268,7 +270,7 @@ flux run -n 1 -N 1 -c 1 --setopt=optiona  myapplication
 
 !!! note
 
-    Using flux directives here to illustrate even though python api is used.  These directives will be in the step scripts, retaining repeatability/record of what was submitted and viewable with the dry run feature
+    Using flux directives here to illustrate even though python api is used.  These directives will be in the step scripts, retaining repeatability/record of what was submitted and viewable with the dry run feature.  The batch/allocation arguments are normalized to the long form (`--setattr` instead of `-S`) and will show up that way in the serialized batch scripts.
    
 ## LSF: a Tale of Two Launchers
 ----
