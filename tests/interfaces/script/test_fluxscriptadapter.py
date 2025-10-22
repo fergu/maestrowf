@@ -40,11 +40,12 @@ from maestrowf.interfaces.script.fluxscriptadapter import FluxScriptAdapter
 from maestrowf.interfaces import ScriptAdapterFactory
 
 from maestrowf.datastructures.core import Study
-from maestrowf.datastructures.core.executiongraph import ExecutionGraph, _StepRecord
+from maestrowf.datastructures.core.executiongraph import ExecutionGraph
 from maestrowf.specification import YAMLSpecification
 
 from rich.pretty import pprint
 import pytest
+
 
 def test_flux_adapter():
     """
@@ -84,6 +85,14 @@ def test_flux_adapter_in_factory():
                 "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.1"
             }
         ),
+        (
+            "hello_bye_parameterized_flux",
+            3,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.hello_world_GREETING.Hello.NAME.Pam.flux.sh.3",
+                "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.3"
+            }
+        ),
     ]
 )
 def test_flux_script_serialization(
@@ -108,6 +117,7 @@ def test_flux_script_serialization(
     ex_graph.set_adapter(yaml_spec.batch)
 
     adapter = ScriptAdapterFactory.get_adapter(yaml_spec.batch["type"])
+    pprint(f"Adapter args: {ex_graph._adapter}")
     adapter = adapter(**ex_graph._adapter)
 
     # Setup a diff ignore pattern to filter out the #INFO (flux version ...
@@ -119,9 +129,9 @@ def test_flux_script_serialization(
     for step_name, step_record in ex_graph.values.items():
         if step_name == "_source":
             continue
-
+        pprint(f"Step name: {step_name}")
         ex_graph._execute_record(step_record, adapter)
-        # pprint("Step name:")
+
         # pprint(step_name)
         # pprint("Step record:")
         # pprint(step_record)

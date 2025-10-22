@@ -39,7 +39,6 @@ from maestrowf.interfaces.script import CancellationRecord, SubmissionRecord, \
     FluxFactory
 from maestrowf.utils import make_safe_path
 
-from rich.pretty import pprint
 
 LOGGER = logging.getLogger(__name__)
 status_re = re.compile(r"Job \d+ status: (.*)$")
@@ -107,11 +106,9 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         # early error messaging
         if self._allocation_args:
             self._allocation_args = self._interface.normalize_additional_args(self._allocation_args)
-            # pprint(f"{self._allocation_args=}")
 
         if self._launcher_args:
             self._launcher_args = self._interface.normalize_additional_args(self._launcher_args)
-            # pprint(f"{self._launcher_args=}")
         
         # Default queue/bank to "" such that 'truthiness' can exclude them
         # from the jobspec/scripts if not provided
@@ -128,45 +125,28 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             )
             queue = ""
 
-        # NOTE: if system is omitted, flux defaults to adding that prefix
-        self._batch_attrs = {
-            "system.queue": queue,
-            "system.bank": bank,
-        }
         self.add_batch_parameter("queue", queue)
         self.add_batch_parameter("bank", bank)
 
-        # Pop off the exclusive flags (NOTE: usually comes from steps, not through constructor?)
-        step_exclusive = 'exclusive' in kwargs  # Track whether it was in there at all
-        self._exclusive = self.get_exclusive(kwargs.pop("exclusive", False))  # Default to old < 1.1.12 behavior
-
         # Check for the flag in additional args and pop it off, letting step key win later
         # NOTE: only need presence of key as this mimics cli like flag behavior
-        # TODO: promote this to formally supported behavior for all adapters
+        # TODO: promote this to formally supported behavior for all adapters, push down into interfaces?
         exclusive_keys = ['x', 'exclusive']
+        self._exclusive = {"allocation": False, "launcher": False}
         if all(ekey in self._allocation_args for ekey in exclusive_keys):
             LOGGER.warn("Repeated addition of exclusive flags 'x' and 'exclusive' in allocation_args.")
 
-        alloc_eflags = [self._allocation_args.pop(ekey, None) for ekey in exclusive_keys]
+        alloc_eflags = [self._allocation_args.pop(ekey) for ekey in exclusive_keys if ekey in self._allocation_args]
         if alloc_eflags:
-            if step_exclusive:
-                LOGGER.warn("Overriding batch block allocation_args with steps exclusive setting '%s'",
-                            step_exclusive)
-            else:
-                self._exclusive['allocation'] = True
+            self._exclusive['allocation'] = True
 
         if all(ekey in self._launcher_args for ekey in exclusive_keys):
             LOGGER.warn("Repeated addition of exclusive flags 'x' and 'exclusive' in launcher_args.")
 
-        launcher_eflags = [self._launcher_args.pop(ekey, None) for ekey in exclusive_keys]
+        launcher_eflags = [self._launcher_args.pop(ekey) for ekey in exclusive_keys if ekey in self._launcher_args]
         if launcher_eflags:
-            if step_exclusive and self._exclusive['launcher']:
-                LOGGER.warn("Overriding batch block launcher_args with steps exclusive setting '%s'",
-                            step_exclusive)
-            else:
-                self._exclusive['launcher'] = True
+            self._exclusive['launcher'] = True
 
-        # NOTE: 
         self.add_batch_parameter("exclusive", self._exclusive['allocation'])
 
         # Populate formally supported flux directives in the header
@@ -177,7 +157,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             "walltime": f"{self._flux_directive}" + "-t {walltime}s",
             "queue": f"{self._flux_directive}" + "-q {queue}",
             "bank": f"{self._flux_directive}" + "--bank={bank}",
-
         }
 
         self._cmd_flags = {
@@ -303,11 +282,11 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             modified_header.append(value.format(**batch_header))
 
         # Handle exclusive flag
-        step_exclusive_given = "exclusive" in step.run
-        step_exclusive = self._exclusive
-        if step_exclusive_given:
-            # Override the default with this step's setting
-            step_exclusive.update(self.get_exclusive(step.run.get("exclusive", False)))
+        # Handle the exclusive flags, updating batch block settings (default)
+        # with what's set in the step, if any given
+        step_exclusive = step.run.get("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
 
         if step_exclusive['allocation']:
             modified_header.append(f"{self._flux_directive}" + "--exclusive")
@@ -334,12 +313,10 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         ntasks = nodes if nodes else self._batch.get("nodes", 1)
         
         # Handle the exclusive flags, updating batch block settings (default)
-        # with what's set in the step
-        step_exclusive_given = "exclusive" in kwargs
-        step_exclusive = self._exclusive
-        if step_exclusive_given:
-            # Override the default with this step's setting
-            step_exclusive.update(self.get_exclusive(kwargs.get("exclusive", False)))
+        # with what's set in the step, if any given
+        step_exclusive = kwargs.pop("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
 
         # TODO: fix this temp hack when standardizing the exclusive key handling
         kwargs['exclusive'] = step_exclusive['launcher']
@@ -414,12 +391,10 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             raise ValueError(msg)
 
         # Handle the exclusive flags, updating batch block settings (default)
-        # with what's set in the step
-        step_exclusive_given = "exclusive" in step.run
-        step_exclusive = self._exclusive
-        if step_exclusive_given:
-            # Override the default with this step's setting
-            step_exclusive.update(self.get_exclusive(step.run.get("exclusive", False)))
+        # with what's set in the step, if any given
+        step_exclusive = step.run.get("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
 
         # Unpack waitable flag and pass it along if there: only pass it along if
         # it's in the step maybe, leaving each adapter to retain their defaults?
@@ -427,14 +402,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         # Normalize the allocation args to api flux.job.JobspecV1 expects
         packed_alloc_args = self._interface.pack_addtl_batch_args(self._allocation_args)
-        # print(f"{normalized_alloc_args=}")
-
-        # Setup placholder for the queue/bank attributes if no already added by user
-        # in the allocation_args
-        # NOTE: should we flatten these treedict style?  conf looks like no treedict, but
-        # the others look like they support it even via python api
-        # if "system" not in normalized_alloc_args["attributes"]:
-        #     normalized_alloc_args["attributes"]["system"] = {}
 
         # Add queue and bank
         queue = self._batch["queue"]
@@ -444,15 +411,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         if bank == "":
             bank = None
 
-        # if self._batch["queue"]:
-        #     normalized_alloc_args["attributes"]["system"]["queue"] = self._batch["queue"]
-        # if self._batch["bank"]:
-        #     # TODO: revisit whether it makes sense to add bank if queue is empty ->
-        #     #       nested brokers usually have neither, and bank falls through silently..
-        #     normalized_alloc_args["attributes"]["system"]["bank"] = self._batch["bank"]
-
-        # pprint(f"Packed alloc args for {step.name}:")
-        # pprint(packed_alloc_args)
         jobid, retcode, submit_status = \
             self._interface.submit(
                 nodes, processors, cores_per_task, path, cwd, walltime, ngpus,

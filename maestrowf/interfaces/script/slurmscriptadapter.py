@@ -78,6 +78,11 @@ class SlurmScriptAdapter(SchedulerScriptAdapter):
         # Check for procs separately, as we don't want it in the header if it's
         # not present.
         procs = kwargs.get("procs", None)
+
+        # Placeholder till future refactor to push up into spec ingestion/step
+        # parsing..
+        self._exclusive = {"allocation": False, "launcher": False}
+
         if procs:
             self.add_batch_parameter("procs", procs)
 
@@ -154,7 +159,7 @@ class SlurmScriptAdapter(SchedulerScriptAdapter):
         if procs_in_batch or not nodes:
             modified_header.append(self._ntask_header.format(**resources))
 
-        exclusive = self.get_exclusive(resources.get("exclusive", False))
+        exclusive = self.resolve_exclusive(self._exclusive, resources.get("exclusive", None))
 
         if exclusive['allocation']:
             modified_header.append(self._exclusive_header)
