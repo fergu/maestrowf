@@ -56,14 +56,14 @@ These are ~structured mappings which are designed to mimic cli and batch script 
 
 |  **Key Type**         | **Prefix** | **Separator** | **Example YAML**     | **Example CLI Input/Directive** |
 |    :-                 | :-            | :-       |    :-                |       :-               |
-|  Single letter        |  `-`           | `" "` (space) | `o: {bar: 42}`       | `-o bar=42`            |
-|  Multi-letter         | `--`           |  `=`          | `setopt: {foo: bar}` | `--setopt=foo=bar`     |
-|  Boolean flag w/key   | as above       | as above      | `setopt: {foobar: }` | `--setopt=foobar`      |
-|  Boolean flag w/o key | as above       | as above      | `exclusive: `        | `--exclusive`      |
+|  Single letter        |  `-`           | `" "` (space) | <pre><code><span>o:</span></br><span>  bar: 42</span></code></pre>       | `-o bar=42`            |
+|  Multi-letter         | `--`           |  `=`          | <pre><code><span>setopt:</span></br><span>  foo: bar</span></code></pre> | `--setopt=foo=bar`     |
+|  Boolean flag w/key   | as above       | as above      | <pre><code><span>setopt:</span></br><span>  foobar: #</span></code></pre> | `--setopt=foobar`      |
+|  Boolean flag w/o key | as above       | as above      | `exclusive: #`        | `--exclusive`      |
 
 !!! note "Boolean/Flag type arguments"
 
-    In the boolean flag strategies, a space is required after the `:` after `foobar: ` or `exclusive`, otherwise yaml will fail to parse and assign the Null value used to tag a key as a boolean flag.  See [flux](#Flux) for special considerations for the `allocation_args`. 
+    In the boolean flag strategies, a space is required after the `:` after `foobar: ` or `exclusive`, otherwise yaml will fail to parse and assign the Null value used to tag a key as a boolean flag.  See [flux](#Flux) for special considerations for the `allocation_args`.  See the above examples where a '#' is added after a space to ensure there is such a space after the `:`.
 
 
 ## LAUNCHER Token
@@ -216,7 +216,7 @@ See the [flux framework](https://flux-framework.readthedocs.io/en/latest/index.h
 ### Extra Flux Args
 ----
 
-As of :material-tag:`1.1.12`, the flux adapter takes advantage of new argument pass through for scheduler options that Maestro cannot abstract away.  This is done via `allocation_args` and `launcher_args` in the batch block, which expand upon the previous `args` input which only applied to `$(LAUNCHER)`.  There are some caveat's here due to the way Maestro talks to flux.  The current flux adapters all use the python api's from Flux to build the batch jobs, with the serialized batch script being serialized separately instead of submitted directly as with the other schedulers.  A consequence of this is the `allocation_args` map to specific call points on that python api, and thus the option pass through is not quite arbitrary.  There are 4 currently supported options for allocations which cover a majority of usecases (open an issue and let us know if one you need isn't covered!):
+As of :material-tag:`1.1.12`, the flux adapter takes advantage of new argument pass through for scheduler options that Maestro cannot abstract away.  This is done via `allocation_args` and `launcher_args` in the batch block, which expand upon the previous `args` input which only applied to `$(LAUNCHER)`.  There are some caveat's here due to the way Maestro talks to flux.  The current flux adapters all use the python api's from Flux to build the batch jobs, with the serialized batch script being serialized separately instead of submitted directly as with the other schedulers.  A consequence of this is the `allocation_args` map to specific call points on that python api, and thus the option pass through is not quite arbitrary.  There are 4 currently supported options for allocations which cover a majority of usecases (open an issue and let us know if there is a usecase you need that is not covered!):
 
 * shell options: `-o/--setopt` prefixed arguments
 * attributes: `-S/--setattr` prefixed arguments
@@ -249,7 +249,7 @@ batch:
       resource.rediscover: "true"  # Use string "true" for Flux compatibility, not "True" or bool True
   launcher_args:
     setopt:
-      optiona:   # Boolean flag, no value needed
+      optiona:   # Boolean flag, no value needed.  NOTE: This is a made up key for demonstration
 ```
 
 #### Example Batch Script
