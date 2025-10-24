@@ -162,45 +162,59 @@ class FluxInterface_0490(FluxInterface):
                 yield rendered_opt
 
     @classmethod
-    def normalize_additional_args(cls, args_dict):
+    def normalize_additional_args(cls, args_dict, group_name=None, filter_unknown=False):
         """
         Helper to normalize additional arguments to known types and an
         unflattened nested dictionary structure.  This unflattens any
         dotpath encoded nested dictionary keys.
 
         :param args_dict: Dictionary of flux arg keys and name: value pairs
+        :type args_dict: dict
+        :param group_name: Optional name of group/tag to use in log messages
+                           when filtering_unknown is on
+        :type group_name: str
+        :param filter_unknown: flag to block pass through of unknown args, e.g.
+                               for allocation where we can't handle arbitrary
+        :type filter_unknown: bool
         :return: dict of packed args with top level keys being the adapter
                  version specific addtl_alloc_arg_types
         """
         # First, normalize and unflatten everything into dicts
-        # print(f"original_additional_args: {args_dict=}")
         unflattened_batch_args = {
             arg_type: {}
             for arg_type in cls.addtl_alloc_arg_types()
         }
 
+        if filter_unknown:
+            known_arg_prefixes = ', '.join([f"'{prefix}'" for prefix in cls._addtl_alloc_arg_type_map.keys()])
+        else:
+            known_arg_prefixes = ''
+
         for arg_key, arg_values in args_dict.items():
             arg_type = cls.addtl_alloc_arg_type_map(arg_key)
-            # print(f"normalize_additional_args: {arg_key=} -> {arg_type=}")
             if arg_type is None:
-                # We only restrict for allocations, so defer logging/rejection
-                # of types not handled by jobspec builder
+                if filter_unknown:
+                    LOGGER.warn(
+                        "Filtering '%s' in unhandled type '%s' from '%s' args."
+                        "  Known types are %s",
+                        arg_values,
+                        arg_key,
+                        str(group_name) if group_name else "UNKNOWN",
+                        known_arg_prefixes
+                    )
+                    continue
+                
                 arg_type = arg_key
 
             if isinstance(arg_values, dict):
                 unflattened_batch_arg = {arg_type: unflatten_dotpath_dict(arg_values)}
-                # unflattened_batch_args[arg_key] = unflatten_dotpath_dict(arg_values)
             else:
                 unflattened_batch_arg = {arg_type: arg_values}
-                # unflattened_batch_args[arg_key] = arg_values
 
             # Update to ensure we don't clobber prior values
-            # print(f"pre-update  unflattened_batch_args: {unflattened_batch_args=}")
             unflattened_batch_args = update_recursive(unflattened_batch_args,
                                                       unflattened_batch_arg)
-        #     print(f"post-update unflattened_batch_args: {unflattened_batch_args=}")
 
-        # print(f"normalized_additional_args: {unflattened_batch_args=}")
         return unflattened_batch_args
 
     @classmethod

@@ -105,7 +105,11 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         # TODO: workon a validation api that can be hooked up to yamlspec ingestion machinery for
         # early error messaging
         if self._allocation_args:
-            self._allocation_args = self._interface.normalize_additional_args(self._allocation_args)
+            self._allocation_args = self._interface.normalize_additional_args(
+                self._allocation_args,
+                group_name="allocation",
+                filter_unknown=True
+            )
 
         if self._launcher_args:
             self._launcher_args = self._interface.normalize_additional_args(self._launcher_args)

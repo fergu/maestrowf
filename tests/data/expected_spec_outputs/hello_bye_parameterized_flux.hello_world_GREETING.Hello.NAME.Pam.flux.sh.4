@@ -1,0 +1,16 @@
+#!/bin/bash
+#INFO (flux adapter version) 0.49.0
+#INFO (flux version) 0.78.0
+#
+#flux: -N 1
+#flux: -t 60.0s
+#flux: -q pdebug
+#flux: --bank=guests
+#flux: --exclusive
+#flux: --setattr=gpumode=CPX
+#flux: --setopt=foo=bar
+#flux: --setopt=bar=42
+#flux: --conf=resource.rediscover=true
+
+flux run -n 1 -N 1 -c 1 --exclusive --setopt=fastload echo "Hello, Pam!" > Hello_Pam.txt
+flux run -n 1 -N 1 -c 1 --exclusive --setopt=fastload sleep 1

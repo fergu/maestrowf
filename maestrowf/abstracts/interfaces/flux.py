@@ -333,3 +333,23 @@ class FluxInterface(ABC):
             return {"prefix": "-", "sep": " "}
         else:
             return {"prefix": "--", "sep": "="}
+
+    @classmethod
+    def normalize_additional_args(cls, args_dict, group_name=None, filter_unknown=False):
+        """
+        Helper to normalize additional arguments to known types and an
+        unflattened nested dictionary structure.  This unflattens any
+        dotpath encoded nested dictionary keys.
+
+        :param args_dict: Dictionary of flux arg keys and name: value pairs
+        :type args_dict: dict
+        :param group_name: Optional name of group/tag to use in log messages
+                           when filtering_unknown is on
+        :type group_name: str
+        :param filter_unknown: flag to block pass through of unknown args, e.g.
+                               for allocation where we can't handle arbitrary
+        :type filter_unknown: bool
+        :return: dict of packed args with top level keys being the adapter
+                 version specific addtl_alloc_arg_types
+        """
+        return args_dict

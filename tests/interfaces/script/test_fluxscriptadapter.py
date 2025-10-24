@@ -93,6 +93,14 @@ def test_flux_adapter_in_factory():
                 "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.3"
             }
         ),
+        (                       # Group to test unknown alloc arg filtering
+            "hello_bye_parameterized_flux",
+            4,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.hello_world_GREETING.Hello.NAME.Pam.flux.sh.4",
+                "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.4"
+            }
+        ),
     ]
 )
 def test_flux_script_serialization(
