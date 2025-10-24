@@ -9,6 +9,12 @@ sample_output/
 # VSCode
 .vscode
 
+# Emacs backup files
+*~
+# Emacs auto-save files
+\#*#
+.#*
+
 # Doxygen output
 docs/html/
 
