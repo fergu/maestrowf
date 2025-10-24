@@ -107,6 +107,9 @@ class FluxInterface_0490(FluxInterface):
             return cls._addtl_arg_cli_key.get(cls._addtl_alloc_arg_type_map[arg_type])
 
         else:
+            # NOTE: can't log unknonws here -> this func doesn't know if which
+            # group of args it's processing (alloc or launcher)
+            # Defer to alloc normalization to pre-clean the alloc group
             return arg_type
 
     @classmethod
@@ -146,12 +149,11 @@ class FluxInterface_0490(FluxInterface):
 
             # Note: dotpath encoding comes after the group/prefix (setattr, ...)
             for dotpath, value in iter_dotpath_items(arg_value):
-                # print(f"{dotpath=} {value=}")
                 rendered_opt = base_render_tmpl.format(
                     prefix=cli_info['prefix'],
-                        cli_key=cli_key,
-                        sep=cli_info['sep'],
-                        dotpath=dotpath
+                    cli_key=cli_key,
+                    sep=cli_info['sep'],
+                    dotpath=dotpath
                 )
 
                 # Flag types have None, and we want to exclude it from launcher
@@ -300,12 +302,7 @@ class FluxInterface_0490(FluxInterface):
 
             # Attach any conf inputs to the jobspec
             conf_dict = addtl_batch_args.get('conf', None)
-            # if "conf" in addtl_batch_args:
-            #     conf_dict = addtl_batch_args['conf']
 
-            # else:
-            #     conf_dict = None
-                
             if force_broker:
                 LOGGER.debug(
                     "Launch under Flux sub-broker. [force_broker=%s, "
@@ -358,31 +355,15 @@ class FluxInterface_0490(FluxInterface):
 
             # Slurp in extra attributes if not null
             # (-S/--setattr)
-            # NOTE: these are sanitized upstream to be dotpath, value tuples
+            # NOTE: these are sanitized upstream to be (dotpath, value) tuples, flags
+            # set to have value of '1' to mach flux cli
             for batch_attr_dotpath, batch_attr_value in addtl_batch_args["attributes"]:
-                # pprint(f"Setting {batch_attr_dotpath}:")
-                # pprint(batch_attr_value)
                 jobspec.setattr(batch_attr_dotpath, batch_attr_value)
-                # pprint(jobspec.dumps())
-                # else:
-                #     pprint(f"Flux adapter v0.49 received null value of '{batch_attr_value}'"
-                #            f" for attribute '{batch_attr_dotpath}'. Omitting from jobspec.")
-                    
-                #     LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
-                #                 " for attribute '%s'. Omitting from jobspec.",
-                #                 batch_attr_value,
-                #                 batch_attr_dotpath)
 
             # Add in job shell options if not null (-o/--setopt)
             # NOTE: these are sanitized upstream to be dotpath, value tuples
             for batch_opt_dotpath, batch_opt_value in addtl_batch_args["shell_options"]:
-                # if batch_opt_value:
                 jobspec.setattr_shell_option(batch_opt_dotpath, batch_opt_value)
-                # else:
-                #     LOGGER.warn("Flux adapter v0.49 received null value of '%s'"
-                #                 " for shell option '%s'. Omitting from jobspec.",
-                #                 batch_opt_value,
-                #                 batch_opt_dotpath)
             
             if walltime > 0:
                 jobspec.duration = walltime
@@ -480,13 +461,6 @@ class FluxInterface_0490(FluxInterface):
 
         addtl += [arg for arg in cls.render_additional_args(launcher_args)]
         args.extend(addtl)
-        # for key, value in addtl_args.items():
-
-        #     addtl.append(f"{key}={value}")
-
-        # if addtl:
-        #     args.append("-o")
-        #     args.append(",".join(addtl))
 
         return " ".join(args)
 
