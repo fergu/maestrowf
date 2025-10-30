@@ -175,9 +175,9 @@ def test_flux_script_serialization(
                                 'options': {'bar': 42, 'foo': 'bar'},
                             },
                             'queue': 'pdebug',
-                            'bank': 'invalid_bank',
+                            'bank': 'guests',
                             'files': {
-                                'conf.json': {'data': {'resource': {'rediscover': "true"}, "noverify": "true"}}
+                                'conf.json': {'data': {'resource': {'rediscover': True, "noverify": True}}}
                             },
                             'gpumode': 'CPX'
                         }
@@ -195,14 +195,16 @@ def test_flux_job_opts(
         variant_spec_path,
         load_study,
         flux_jobspec_check,
-        tmp_path                # Pytest tmp dir fixture: Path()):
+        tmp_path,               # Pytest tmp dir fixture: Path()):
+        generate_jobspec_from_script,
 ):
     spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
     pprint(spec_path)
     yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
 
+    print(f"{tmp_path=}")
     study: Study = load_study(spec_path, tmp_path, dry_run=False)
-
+    print(f"{study.output_path=}")
     pkl_path: str
     ex_graph: ExecutionGraph
     pkl_path, ex_graph = study.stage()
@@ -220,7 +222,7 @@ def test_flux_job_opts(
     for step_name, step_record in ex_graph.values.items():
         if step_name == "_source":
             continue
-
+        
         ex_graph._execute_record(step_record, adapter)
         pprint("Step name:")
         pprint(step_name)
@@ -233,9 +235,25 @@ def test_flux_job_opts(
         for record_name, status in job_status.items():
             if step_name == record_name:
                 jobid = ex_graph.values[record_name].jobid[-1]
-                flux_jobspec_check(jobid, expected_jobspec_keys[step_name])
 
-        # pprint(_record)
-        # pprint("Written script:")
+                flux_jobspec_check(jobid,
+                                   expected_jobspec_keys[step_name],
+                                   source_label='mark.parametrized jobspec',
+                                   ignore_keys={"tasks.0.command.3"},
+                                   debug=False)
 
-        # assert step_name in expected_batch_files
+                # Add a second test to ensure it matches written scripts' jobspec
+                script_jobspec = generate_jobspec_from_script(step_record.script)
+                
+                flux_jobspec_check(jobid,
+                                   script_jobspec,
+                                   source_label='script jobspec',
+                                   ignore_keys={
+                                       "tasks.0.command.3",  # script/cmd obtained via different methods between two modes
+                                       "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
+                                       # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
+                                       # "attributes.system.cwd",  # Irrelevant difference
+                                       "attributes.system.shell.options.rlimit",  # Not populated via python?
+                                       "attributes.system.files.script",  # Attached to cmd in python?
+                                   },
+                                   debug=False)

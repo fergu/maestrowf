@@ -1,11 +1,14 @@
 from collections import defaultdict
 import difflib
+import json
 import logging
 import os
 from pathlib import Path
 import re
 import shutil
 from subprocess import check_output
+import subprocess
+from typing import Any, Dict, Optional
 
 import pprint
 import pytest
@@ -189,7 +192,7 @@ def load_study():
     def _load_study(spec_path, output_path, dry_run=False):
 
         # Setup some default args to use for testing
-        use_tmp_dir = True          # NOTE: likely want to let pytest control this?
+        use_tmp_dir = False          # NOTE: likely want to let pytest control this?
         hash_ws = False
         throttle = 0
         submission_attempts = 3
@@ -203,6 +206,8 @@ def load_study():
 
         # Set up the output directory.
         out_dir = environment.remove("OUTPUT_PATH")
+
+        pprint.pprint(f"LOAD_STUDY: {str(out_dir)}, {output_path=}")
         if output_path:
             # If out is specified in the args, ignore OUTPUT_PATH.
             output_path = os.path.abspath(output_path)
@@ -223,6 +228,7 @@ def load_study():
             output_path = make_safe_path(out_dir, *[out_name])
         environment.add(Variable("OUTPUT_PATH", output_path))
 
+        pprint.pprint(f"LOAD_STUDY: post-output_path resolution: {output_path=}")
         # Set up file logging
         create_parentdir(os.path.join(output_path, "logs"))
         output_path = Path(output_path)
@@ -349,62 +355,426 @@ def text_diff():
 def flux_jobspec_check(request):
     import flux
 
-    def _diff_jobspec_keys(jobid, expected, path=None):
+    def _diff_jobspec_keys(
+        jobid,
+        expected,
+        path=None,
+        source_label=None,
+        list_matcher=None,
+        ignore_keys=None,
+        debug=False,
+        debug_log=None,
+    ):
         """
-        Helper to recursively check for values in flux jobspec's.
+        Verify that 'expected' is a subset of the actual flux jobspec, with support for:
+          - Ignoring specific keys/indices via ignore_keys (paths, names, or predicate(s))
+          - Multiple ignore predicates or path specs
+          - Optional debugging trace
 
-        :param jobid: flux jobid to look up jobspec for (int or f58)
-        :param expected: nested dicts of key/values to verify in jobspec (dict)
-        :param path: optional initial path in jobspec dict to search under
+        Parameters:
+          - jobid: flux job id
+          - expected: nested structure of expected keys/values
+          - path: initial dict path to descend before comparing
+          - source_label: label for error messages
+          - list_matcher: optional matcher callable for unordered list of dicts
+          - ignore_keys: None, single spec, or list/tuple of specs:
+              * dotted path strings, e.g. "tasks.0.command.3"
+              * tuples of raw segments, e.g. ("tasks", 0, "command", 3)
+              * sets/lists of simple key names, e.g. {"timestamp", "uuid"}
+              * callable predicate(raw_path, key_or_index, actual_value) -> bool
+            Any spec that returns True will cause that key/index to be skipped.
+          - debug: True to enable verbose ignore diagnostics
+          - debug_log: optional callable(msg). Defaults to print if debug is True.
+
+        Assumptions:
+          - Top-level jobspec is a dict.
         """
-        # NOTE: may need some helpers here if needing to mess with uri to change broker
         fh = flux.Flux()
+        jobspec = flux.job.job_kvs_lookup(
+            fh, flux.job.JobID(jobid), decode=True, original=False
+        ).get("jobspec")
 
-        # Get the jobspec (do we care about original?)
-        # NOTE: job_kvs_lookup vs job_info_lookup?  does it matter?
+        prefix = f"[{source_label}] " if source_label else ""
 
-        #  Default returns id, jobspec keys
-        jobspec = flux.job.job_kvs_lookup(fh, flux.job.JobID(jobid), decode=True, original=False)['jobspec']
+        # Build composite ignore predicate with debugging
+        ignore_pred = build_ignore_predicate(ignore_keys, debug=debug, debug_log=debug_log)
+        # pprint.pprint(f"[flux_jobspec_check]: id(ignore_pred) = {id(ignore_pred)}")
+        def fmt_path(pretty_segments):
+            return ".".join(pretty_segments) if pretty_segments else "<root>"
 
-        def assert_nested_dict_subset(actual, expected, path=None):
-            """Recursively assert key/values in actual/expected dictionaries"""
-            if path is None:
-                path = []
+        def assert_equal_scalar(actual, expected, raw_path, pretty_path):
+            assert actual == expected, (
+                f"{prefix}Value mismatch at {fmt_path(pretty_path)}: "
+                f"expected {expected!r}, got {actual!r}"
+            )
 
-            for key, expected_value in expected.items():
-                current_path = path + [repr(key)]
-                assert key in actual, f"Missing key at {'.'.join(current_path)}"
-                actual_value = actual[key]
-                if isinstance(expected_value, dict):
-                    assert isinstance(actual_value, dict), (
-                        f"Expected dict at {'.'.join(current_path)}, "
-                        f"got {type(actual_value).__name__}"
-                    )
-                    assert_nested_dict_subset(actual_value,
-                                              expected_value,
-                                              current_path)
-                elif isinstance(expected_value, list):
-                    assert isinstance(actual_value, list), (
-                        f"Expected list at {'.'.join(current_path)}, "
-                        f"got {type(actual_value).__name__}"
-                    )
-                    for i, item in enumerate(expected_value):
-                        if item is not ...:  # Ellipsis means "skip this index"
-                            assert_nested_dict_subset(actual_value[i],
-                                                      item,
-                                                      current_path + [str(i)])
-                else:
-                    assert actual_value == expected_value, (
-                        f"Value mismatch at {'.'.join(current_path)}: "
-                        f"expected {expected_value!r}, got {actual_value!r}"
-                    )
+        def assert_dict_subset(actual_dict, expected_dict, raw_path, pretty_path):
+            assert isinstance(actual_dict, dict), (
+                f"{prefix}Expected dict at {fmt_path(pretty_path)}, "
+                f"got {type(actual_dict).__name__}"
+            )
+            for key, expected_value in expected_dict.items():
+                # Ignore check with raw context
+                # pprint.pprint(f"[flux_jobspec_check][assert_dict_subset]: id(ignore_pred) = {id(ignore_pred)}")
+                if ignore_pred(raw_path, key, actual_dict.get(key, None), pretty_path):
+                    continue
+
+                raw_next = raw_path + (key,)
+                pretty_next = pretty_path + [repr(key)]
+                assert key in actual_dict, f"{prefix}Missing key at {fmt_path(pretty_next)}"
+                actual_value = actual_dict[key]
+                assert_nested_subset(actual_value, expected_value, raw_next, pretty_next)
+
+        def assert_list_positional_subset(actual_list, expected_list, raw_path, pretty_path):
+            assert isinstance(actual_list, list), (
+                f"{prefix}Expected list at {fmt_path(pretty_path)}, "
+                f"got {type(actual_list).__name__}"
+            )
+            for i, item in enumerate(expected_list):
+                if item is ...:
+                    continue
+
+                # pprint.pprint(f"[flux_jobspec_check][assert_list_positional_subset]: id(ignore_pred) = {id(ignore_pred)}")
+                actual_val = actual_list[i] if i < len(actual_list) else None
+                if ignore_pred(raw_path, i, actual_val, pretty_path):
+                    continue
+                # else:
+                #     pprint.pprint(f"[ignore-pred]: not ignoring: {raw_path=} {i=} {actual_val=} {pretty_path=}")
+
+                assert i < len(actual_list), (
+                    f"{prefix}List index out of range at {fmt_path(pretty_path)}[{i}]: "
+                    f"actual length {len(actual_list)}"
+                )
+                assert_nested_subset(actual_list[i], item, raw_path + (i,), pretty_path + [f"[{i}]"])
+
+        def assert_list_unordered_subset(actual_list, expected_list, raw_path, pretty_path):
+            assert isinstance(actual_list, list), (
+                f"{prefix}Expected list at {fmt_path(pretty_path)}, "
+                f"got {type(actual_list).__name__}"
+            )
+            # pprint.pprint(f"[flux_jobspec_check][assert_list_unordered_subset]: id(ignore_pred) = {id(ignore_pred)}")
+            available_indices = [
+                i for i in range(len(actual_list))
+                if not ignore_pred(raw_path, i, actual_list[i], pretty_path)
+            ]
+
+            def consume(idx):
+                try:
+                    available_indices.remove(idx)
+                    return True
+                except ValueError:
+                    return False
+
+            for i, exp_item in enumerate(expected_list):
+                if exp_item is ...:
+                    continue
+
+                matched_idx = None
+                # Try matcher first
+                if callable(list_matcher):
+                    idx = list_matcher(actual_list, exp_item, pretty_path)
+                    if idx is not None and idx in available_indices:
+                        matched_idx = idx
+
+                # Fallback search
+                if matched_idx is None:
+                    for idx in list(available_indices):
+                        try:
+                            assert_nested_subset(
+                                actual_list[idx], exp_item,
+                                raw_path + (idx,), pretty_path + [f"[{idx}]"]
+                            )
+                            matched_idx = idx
+                            break
+                        except AssertionError:
+                            continue
+
+                assert matched_idx is not None, (
+                    f"{prefix}No matching list element for expected item at "
+                    f"{fmt_path(pretty_path)}[{i}]"
+                )
+                assert consume(matched_idx), (
+                    f"{prefix}Internal error, matched index {matched_idx} could not be consumed at "
+                    f"{fmt_path(pretty_path)}[{i}]"
+                )
+
+        def assert_tuple_unordered_subset(actual_tuple, expected_tuple, raw_path, pretty_path):
+            assert isinstance(actual_tuple, tuple), (
+                f"{prefix}Expected tuple at {fmt_path(pretty_path)}, "
+                f"got {type(actual_tuple).__name__}"
+            )
+            # pprint.pprint(f"[flux_jobspec_check][assert_tuple_unordered_subset]: id(ignore_pred) = {id(ignore_pred)}")
+            available_indices = [
+                i for i in range(len(actual_tuple))
+                if not ignore_pred(raw_path, i, actual_tuple[i], pretty_path)
+            ]
+
+            def consume(idx):
+                try:
+                    available_indices.remove(idx)
+                    return True
+                except ValueError:
+                    return False
+
+            for i, exp_item in enumerate(expected_tuple):
+                matched_idx = None
+                for idx in list(available_indices):
+                    try:
+                        assert_nested_subset(
+                            actual_tuple[idx], exp_item,
+                            raw_path + (idx,), pretty_path + [f"({idx})"]
+                        )
+                        matched_idx = idx
+                        break
+                    except AssertionError:
+                        continue
+                assert matched_idx is not None, (
+                    f"{prefix}No matching tuple element for expected item at "
+                    f"{fmt_path(pretty_path)}({i})"
+                )
+                assert consume(matched_idx), (
+                    f"{prefix}Internal error, matched tuple index {matched_idx} could not be consumed at "
+                    f"{fmt_path(pretty_path)}({i})"
+                )
+
+        def assert_nested_subset(actual, expected, raw_path, pretty_path):
+            if isinstance(expected, dict):
+                return assert_dict_subset(actual, expected, raw_path, pretty_path)
+            if isinstance(expected, list):
+                if callable(list_matcher):
+                    return assert_list_unordered_subset(actual, expected, raw_path, pretty_path)
+                return assert_list_positional_subset(actual, expected, raw_path, pretty_path)
+            if isinstance(expected, tuple):
+                return assert_tuple_unordered_subset(actual, expected, raw_path, pretty_path)
+            return assert_equal_scalar(actual, expected, raw_path, pretty_path)
 
         try:
-            assert_nested_dict_subset(jobspec, expected, path=path)
+            assert isinstance(jobspec, dict), (
+                f"{prefix}Top-level jobspec is not a dict, got {type(jobspec).__name__}"
+            )
+            actual_root = jobspec
+            raw_path = tuple()
+            pretty_path = []
+
+            # Descend initial path
+            if path:
+                for segment in path:
+                    # If this segment is ignored, stop descending and compare at current level
+                    # pprint.pprint(f"[flux_jobspec_check][main]: id(ignore_pred) = {id(ignore_pred)}")
+                    if ignore_pred(raw_path, segment, actual_root.get(segment, None), pretty_path):
+                        break
+                    assert isinstance(actual_root, dict), (
+                        f"{prefix}Expected dict while walking path at {fmt_path(pretty_path)}, "
+                        f"got {type(actual_root).__name__}"
+                    )
+                    assert segment in actual_root, (
+                        f"{prefix}Missing key while walking path at {fmt_path(pretty_path + [repr(segment)])}"
+                    )
+                    actual_root = actual_root[segment]
+                    raw_path += (segment,)
+                    pretty_path.append(repr(segment))
+
+            assert_nested_subset(actual_root, expected, raw_path, pretty_path)
+
         except AssertionError:
-            jobspec_str = pprint.pformat(jobspec, width=80)
+            jobspec_str = pprint.pformat(jobspec, width=100)
+            expected_str = pprint.pformat(expected, width=100)
             request.node.add_report_section(
-                "call", "jobspec", f"\n=== Jobspec dump on failure for job {jobid} ===\n{jobspec_str}\n=== End jobspec dump ===\n")
+                "call",
+                "jobspec",
+                (
+                    f"\n=== Jobspec dump on failure for job {jobid} "
+                    f"(expected source: {source_label or 'unknown'}) ===\n{jobspec_str}\n"
+                    f"=== Expected structure ===\n{expected_str}\n"
+                    "=== End jobspec dump ===\n"
+                ),
+            )
             raise
 
     return _diff_jobspec_keys
+
+
+def build_ignore_predicate(ignore_keys, debug=False, debug_log=None):
+    """
+    Build a composite predicate with support for multiple specs.
+
+    Returns predicate(raw_path_tuple, key_or_index_raw, actual_value, pretty_path_list) -> bool.
+
+    Supported input forms for ignore_keys:
+      - None
+      - Single predicate callable
+      - Single path spec: dotted string "a.b.1.c.2" or tuple ("a", "b", 1, "c", 2)
+      - Collection of mixed specs: [predicate, {"timestamp"}, "tasks.0.command.3", ("tasks", 0, "count")]
+      - Sets/lists of simple names: {"timestamp", "uuid"}
+
+    Matching rules:
+      - Full path match compares tuple(raw_path) + (key_or_index,) against normalized path set.
+      - Simple name match applies when key_or_index is a str and appears in simple_names.
+      - Custom predicates are called with raw_path, key_or_index, actual_value.
+      - If any matcher returns True, the element is ignored.
+
+    Debugging:
+      - If debug=True, every ignore decision is logged with context.
+      - Provide debug_log(msg) to route logs, otherwise print is used.
+    """
+    if not debug_log and debug:
+        debug_log = pprint.pprint
+
+    # Normalize all specs into:
+    normalized_paths = set()  # set of tuples of raw segments
+    simple_names = set()      # set of str names
+    custom_preds = []         # list of callables(raw_path, key_or_index, actual_value) -> bool
+    
+    # pprint.pprint(f"[build-pred][main]: post-spec addition, id(normalized_paths) = {id(normalized_paths)}")
+    def parse_path_str(s):
+        parts = s.split(".")
+        parsed = []
+        for p in parts:
+            if p.isdigit():
+                parsed.append(int(p))
+            else:
+                parsed.append(p)
+        return tuple(parsed)
+
+    def add_spec(spec):
+        if spec is None:
+            return
+        if callable(spec):
+            custom_preds.append(spec)
+            return
+        if isinstance(spec, str):
+            normalized_paths.add(parse_path_str(spec))
+            return
+        if isinstance(spec, tuple):
+            normalized_paths.add(spec)
+            return
+        # If it is a collection, inspect elements
+        if isinstance(spec, (list, set, tuple)):
+            # Heuristically treat string elements as simple names unless they look like paths
+            for x in spec:
+                if callable(x):
+                    custom_preds.append(x)
+                elif isinstance(x, str):
+                    # Decide if this is a dotted path or just a name
+                    if "." in x or x.isdigit():
+                        normalized_paths.add(parse_path_str(x))
+                    else:
+                        simple_names.add(x)
+                elif isinstance(x, tuple):
+                    normalized_paths.add(x)
+                else:
+                    # ignore non-supported types quietly
+                    pass
+            return
+        # Fallback, unsupported type ignored
+
+    # Accept single or multiple specs
+    if isinstance(ignore_keys, (list, tuple, set)):
+        for spec in ignore_keys:
+            # pprint.pprint(f"[build-pred]: Adding {spec=}")
+            add_spec(spec)
+
+        # pprint.pprint(f"[build-pred]: Normalized paths: {normalized_paths=}, types: {list(tuple(type(pi) for pi in i) for i in normalized_paths)}")
+    else:
+        add_spec(ignore_keys)
+    # pprint.pprint(f"[build-pred][main]: post-spec addition, id(normalized_paths) = {id(normalized_paths)}")
+    def match(raw_path, key_or_index, actual_value):
+        full = tuple(raw_path) + (key_or_index,)
+        # pprint.pprint(f"[ignore-pred][match]: {full=}, types: {tuple(type(i) for i in full)}")
+        # pprint.pprint(f"[ignore-pred][match]: {normalized_paths=}, types: {list(tuple(type(pi) for pi in i) for i in normalized_paths)}")
+        # pprint.pprint(f"[build_ignore_predicate][match]: id(normalized_paths) = {id(normalized_paths)}")
+        
+        if full in normalized_paths:
+            return True
+        if isinstance(key_or_index, str) and key_or_index in simple_names:
+            return True
+        for pred in custom_preds:
+            try:
+                if pred(raw_path, key_or_index, actual_value):
+                    return True
+            except Exception:
+                # Do not break matching on predicate error, treat as False
+                continue
+        return False
+
+    def composite(raw_path, key_or_index, actual_value, pretty_path):
+        # pprint.pprint(f"[build_ignore_predicate][composite]: pre-match: id(normalized_paths) = {id(normalized_paths)}")
+        result = match(raw_path, key_or_index, actual_value)
+        if debug:
+            which = []
+            if tuple(raw_path) + (key_or_index,) in normalized_paths:
+                which.append("path")
+            if isinstance(key_or_index, str) and key_or_index in simple_names:
+                which.append("name")
+            for idx, pred in enumerate(custom_preds):
+                try:
+                    if pred(raw_path, key_or_index, actual_value):
+                        which.append(f"pred[{idx}]")
+                except Exception:
+                    pass
+            msg = (
+                f"[ignore-debug] raw_path={raw_path}, key_or_index={key_or_index!r}, "
+                f"pretty_path={'.'.join(pretty_path) if pretty_path else '<root>'}, "
+                f"actual_value={actual_value!r}, ignored={result}, via={','.join(which) or 'none'}"
+            )
+            debug_log(msg)
+        return result
+
+    return composite
+
+
+class FluxJobspecError(Exception):
+    pass
+
+
+@pytest.fixture
+def generate_jobspec_from_script():
+    """
+    Pytest fixture that returns a helper callable:
+      generate_jobspec_from_script(script_path, extra_args=None) -> Dict[str, Any]
+
+    It runs `flux batch --dry-run <script>` and returns the jobspec JSON as a dict.
+    """
+    def _generate(script_path: str, extra_args: Optional[list[str]] = None) -> Dict[str, Any]:
+        cmd = ["flux", "batch", "--dry-run", script_path]
+        if extra_args:
+            cmd = ["flux", "batch", "--dry-run"] + extra_args + [script_path]
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except OSError as e:
+            raise FluxJobspecError(f"Failed to execute flux batch: {e}") from e
+
+        if proc.returncode != 0:
+            raise FluxJobspecError(
+                f"flux batch dry-run failed with exit code {proc.returncode}; stderr: {proc.stderr.strip()}"
+            )
+
+        stdout = proc.stdout.strip()
+        if not stdout:
+            raise FluxJobspecError("No jobspec output captured from flux batch --dry-run")
+
+        try:
+            jobspec = json.loads(stdout)
+            # pprint.pprint(f"type of jobspec: {type(jobspec)}")
+        except json.JSONDecodeError:
+            # Fallback in case of extra banner lines; try from first '{'
+            first_brace = stdout.find("{")
+            if first_brace == -1:
+                raise FluxJobspecError("Dry-run output did not contain JSON")
+            try:
+                jobspec = json.loads(stdout[first_brace:])
+            except json.JSONDecodeError as e2:
+                raise FluxJobspecError("Failed to parse jobspec JSON from dry-run output") from e2
+
+        if not isinstance(jobspec, dict):
+            raise FluxJobspecError("Parsed jobspec is not a JSON object")
+
+        return jobspec
+
+    return _generate
