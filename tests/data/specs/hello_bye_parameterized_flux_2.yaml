@@ -5,7 +5,7 @@ description:
 batch:
     type        : flux
     host        : rzadams
-    bank        : invalid_bank
+    bank        : guests
     queue       : pdebug
     allocation_args:
       setopt:                   # > 1 letter gets '--' prefix: --setopt foo=true
@@ -16,8 +16,8 @@ batch:
         gpumode: CPX
       conf:
         resource:
-          rediscover: "true" # Flux wants 'true', not 'True' that python bool serializes to
-          noverify: "true"
+          rediscover: True # Flux wants 'true', not 'True' that python bool serializes to
+          noverify: True
         
     launcher_args:
       setopt:

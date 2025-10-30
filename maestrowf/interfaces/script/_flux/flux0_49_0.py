@@ -130,6 +130,8 @@ class FluxInterface_0490(FluxInterface):
         """
         Helper to render additional argument sets to flux cli format for
         use in constructing $(LAUNCHER) line and flux batch directives.
+        This includes coercing bools to json's lowercase str forms and
+        omitting values for flag types (null/none via maestro's yaml)
 
         :param args_dict: Dictionary of flux arg keys and name: value pairs
         :yield: formatted strings of cli options/values
@@ -139,10 +141,16 @@ class FluxInterface_0490(FluxInterface):
            Promote this to the general/base adapters to handle non-normalizable
            scheduler/machine specific options
         """
+        # Normalize to string form that json expects for bools:
+        # flux expects json's lowercase 'true' not 'True' from python bool
+        coerced_vals = coerce_dict_values(
+            args_dict,
+            lambda x: str(x).lower() if isinstance(x, bool) else x
+        )
 
         base_render_tmpl = "{prefix}{cli_key}{sep}{dotpath}"
         value_render_tmpl = "={value}"
-        for arg_key, arg_value in args_dict.items():
+        for arg_key, arg_value in coerced_vals.items():
             # Get the cli key and associated rendering info
             cli_key = cls.get_addtl_arg_cli_key(arg_key)
             cli_info = cls.get_cli_arg_prefix_sep(cli_key)
@@ -248,6 +256,7 @@ class FluxInterface_0490(FluxInterface):
         for arg_key, arg_values in args_dict.items():
             coerced_vals = coerce_dict_values(arg_values,
                                               lambda x: 1 if x is None else x)
+
             if arg_key in dotpath_format:
                 group_values = list(iter_dotpath_items(coerced_vals))
             else:

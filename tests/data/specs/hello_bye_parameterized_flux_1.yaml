@@ -16,7 +16,7 @@ batch:
         gpumode: CPX
       conf:
         resource:
-          rediscover: "true" # Flux wants 'true', not 'True' that python bool serializes to
+          rediscover: True # Flux wants 'true', not 'True' that python bool serializes to
         
     launcher_args:
       setopt:
