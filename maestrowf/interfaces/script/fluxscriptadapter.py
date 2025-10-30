@@ -161,6 +161,10 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             "walltime": f"{self._flux_directive}" + "-t {walltime}s",
             "queue": f"{self._flux_directive}" + "-q {queue}",
             "bank": f"{self._flux_directive}" + "--bank={bank}",
+            "job-name":
+                f"{self._flux_directive}" + "--job-name=\"{job-name}\"\n"
+                f"{self._flux_directive}" + "--output={job-name}.{{{{id}}}}.out\n"
+                f"{self._flux_directive}" + "--error={job-name}.{{{{id}}}}.err"
         }
 
         self._cmd_flags = {
