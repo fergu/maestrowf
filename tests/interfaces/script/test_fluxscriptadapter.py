@@ -130,7 +130,7 @@ def test_flux_script_serialization(
 
     # Setup a diff ignore pattern to filter out the #INFO (flux version ...
     ignore_patterns = [
-        re.compile(r'#INFO \(flux version\)')
+        re.compile(r'#MAESTRO-INFO \(flux version\)')
     ]
 
     # Loop over the steps and execute them
@@ -183,7 +183,21 @@ def test_flux_script_serialization(
                         }
                     }
                 },
-                # "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.1"
+                "bye_world_GREETING.Hello.NAME.Pam": {
+                    'attributes': {
+                        'system': {
+                            'shell': {
+                                'options': {'bar': 42, 'foo': 'bar'},
+                            },
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                            'files': {
+                                'conf.json': {'data': {'resource': {'rediscover': True, "noverify": True}}}
+                            },
+                            'gpumode': 'CPX'
+                        }
+                    }
+                },
             }
         ),
     ]
@@ -215,7 +229,7 @@ def test_flux_job_opts(
 
     # Setup a diff ignore pattern to filter out the #INFO (flux version ...
     ignore_patterns = [
-        re.compile(r'#INFO \(flux version\)')
+        re.compile(r'#MAESTRO-INFO \(flux version\)')
     ]
 
     # Loop over the steps and execute them
@@ -236,6 +250,9 @@ def test_flux_job_opts(
             if step_name == record_name:
                 jobid = ex_graph.values[record_name].jobid[-1]
 
+                # Cancel the job; we just need jobspecs, not completion
+                c_record = adapter.cancel_jobs([jobid])
+
                 flux_jobspec_check(jobid,
                                    expected_jobspec_keys[step_name],
                                    source_label='mark.parametrized jobspec',
@@ -252,7 +269,7 @@ def test_flux_job_opts(
                                        "tasks.0.command.3",  # script/cmd obtained via different methods between two modes
                                        "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
                                        # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
-                                       # "attributes.system.cwd",  # Irrelevant difference
+                                       "attributes.system.cwd",  # Irrelevant difference
                                        "attributes.system.shell.options.rlimit",  # Not populated via python?
                                        "attributes.system.files.script",  # Attached to cmd in python?
                                    },

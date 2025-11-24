@@ -157,6 +157,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         self._flux_directive = "#flux: "
         self._header = {
             "nodes": f"{self._flux_directive}" + "-N {nodes}",
+            "procs": f"{self._flux_directive}" + "-n {procs}",
             # NOTE: always use seconds to guard against upstream default behavior changes
             "walltime": f"{self._flux_directive}" + "-t {walltime}s",
             "queue": f"{self._flux_directive}" + "-q {queue}",
@@ -176,7 +177,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         # Addition info flags to add to the header: MAESTRO only! flux ignores
         # anything after first non-flux-directive line so this must go last
-        self._info_directive = "#INFO "
+        self._info_directive = "#MAESTRO-INFO "
         self._header_info = {
             "version": f"{self._info_directive}" + "(flux adapter version) {version}",
             "flux_version": f"{self._info_directive}" + "(flux version) {flux_version}"
@@ -265,6 +266,8 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         if run["nodes"]:
             batch_header["nodes"] = run.pop("nodes")
+        if run["procs"]:
+            batch_header["procs"] = run.pop("procs")
         batch_header["job-name"] = step.name.replace(" ", "_")
         batch_header["comment"] = step.description.replace("\n", " ")
         batch_header["flux_version"] = self._broker_version
@@ -286,6 +289,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         for key, value in self._header.items():
             if key not in batch_header:
                 continue
+            print(f"INFO: processing header: {key=}, {value=}, {batch_header=}")
 
             modified_header.append(value.format(**batch_header))
 
