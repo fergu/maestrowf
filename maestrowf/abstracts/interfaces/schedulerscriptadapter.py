@@ -92,6 +92,75 @@ class SchedulerScriptAdapter(ScriptAdapter):
         """
         self._batch[name] = value
 
+    def get_exclusive(self, step_exclusive):
+        """
+        Helper for normalizing new/legacy exclusive syntax in the step keys.
+        None used as sentinel for 'not provided' to facilitate layering
+        on top of default values.
+
+        :param step_exclusive: value of 'exclusive' key in a StudyStep.run
+        :return dict: normalized dict with 'allocation' and 'launcher' keys
+                      and bool or None values for each
+
+        .. note::
+
+           Move this upstream into a future studystep validator?  also add
+           hooks for per scheduler normalizing of the extra args from batch
+           blocks
+        """
+        # Handle old scalar syntax which applied to allocatios only
+        if not isinstance(step_exclusive, dict):
+            if step_exclusive is not None:
+                return {
+                    "allocation": step_exclusive,
+                    "launcher": None,
+                }
+            else:
+                return {
+                    "allocation": None,
+                    "launcher": None,
+                }
+        else:
+            # Yaml schema limits keys already
+            exclusive_dict = step_exclusive
+            if 'allocation' not in step_exclusive:
+                exclusive_dict['allocation'] = None
+            if 'launcher' not in step_exclusive:
+                exclusive_dict['launcher'] = None
+            return exclusive_dict
+
+    def resolve_exclusive(self, adapter_exclusive, step_exclusive):
+        """
+        Helper layering step exclusive config ontop of adapter, treating
+        adapter as default values to override.
+
+        :param adapter_exclusive: 'default' exclusive settings from batch
+                                  config. This is a per queue/machine constant.
+        :type adapter_exclusive: dict
+        :param step_exclusive: value of 'exclusive' key in StudyStep.run
+        :type adapter_exclusive: dict
+        :return dict: normalized dict with 'allocation' and 'launcher' keys
+                      and bool values for each
+
+        .. note::
+
+           Move this upstream into a future studystep validator?  also add
+           hooks for per scheduler normalizing of the extra args from batch
+           blocks
+        """
+        # Normalize the step's exclusive to gracefully handle old behavior
+        exclusive_updates = self.get_exclusive(step_exclusive)
+
+        # Apply update such that step wins if not None
+        exclusive_dict = {}
+        for key, default_val in adapter_exclusive.items():
+            if key in exclusive_updates and exclusive_updates[key] is not None:
+                exclusive_dict[key] = exclusive_updates[key]
+            else:
+                exclusive_dict[key] = default_val
+
+        return exclusive_dict
+
     @abstractmethod
     def get_header(self, step):
         """

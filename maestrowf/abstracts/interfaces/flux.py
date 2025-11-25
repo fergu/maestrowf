@@ -248,3 +248,108 @@ class FluxInterface(ABC):
         :return: A string of the name of a FluxInterface class.
         """
         ...
+
+    @classmethod
+    def addtl_alloc_arg_types(cls):
+        """
+        Return set of additional allocation args that this adapter knows how
+        to wire up to the jobspec python apis, e.g. 'attributes',
+        'shell_options', ... This is aimed specifically at the repeated types,
+        which collect many flags/key=value pairs which go through a specific
+        jobspec call.  Everything not here gets dumped into a 'misc' group
+        for individual handling.
+
+        :return: List of string
+
+        .. note::
+
+           Should we have an enum for these or something vs random strings?
+        """
+        # default nothing, overriding in implementation
+        return []
+
+    @classmethod
+    def render_additional_args(cls, args_dict):
+        """
+        Helper to render additional argument sets to flux cli format for
+        use in constructing $(LAUNCHER) line and flux batch directives.
+        This default implementation yields a single empty string.
+
+        :param args_dict: Dictionary of flux arg keys and name: value pairs
+        :yield: formatted strings of cli options/values
+
+        .. note::
+
+           Promote this to the general/base adapters to handle non-normalizable
+           scheduler/machine specific options
+        """        
+        yield ""
+
+    @classmethod
+    def addtl_alloc_arg_type_map(cls, option):
+        """
+        Map verbose/brief cli arg option name (o from -o, setopt from --setopt)
+        onto known alloc arg types this interface implements
+
+        :param option: option string corresponding to flux cli input
+        :return: string, one of known_alloc_arg_types
+        """
+        # Default to pass through, override in implementation
+        return option
+
+    @classmethod
+    def get_addtl_arg_cli_key(cls, arg_type):
+        """
+        Return expected cli key associated with each normalized arg type.
+        `arg_type` not in known_arg_types are assumed to be the key already
+        to facilitate flexible pass through to launcher
+
+        :param arg_type: string noting arg group or cli key
+        :returns: cli key used for this arg
+
+        .. note::
+
+           Can we find a reasonable default prefix (where are things put
+           by default in flux, attributes.system?)
+        """
+        # Default to pass through, handling known types/mapping in implementation
+        return arg_type
+
+    @staticmethod
+    def get_cli_arg_prefix_sep(cli_key):
+        """
+        Helper for rendering extra options on cli/batch directives.  Sets prefix
+        and value separator based on length of cli key.  Flux has two conventions:
+        single letter cli_key has prefix of '-' and separator of ' ' while
+        multiletter cli_key has prefix of '--' and separator of '='.  Examples
+        '-o foo=2' or '--setopt=foo=2' for single letter cli_key (o) and
+        multiletter (setopt) forms to set the same option.
+
+        :param cli_key: the key to use on the cli form of an argument
+        :type cli_key: str
+        :returns: dict containing 'prefix' and 'sep' for use in rendering
+        """
+        if len(cli_key) == 1:
+            return {"prefix": "-", "sep": " "}
+        else:
+            return {"prefix": "--", "sep": "="}
+
+    @classmethod
+    def normalize_additional_args(cls, args_dict, group_name=None, filter_unknown=False):
+        """
+        Helper to normalize additional arguments to known types and an
+        unflattened nested dictionary structure.  This unflattens any
+        dotpath encoded nested dictionary keys.
+
+        :param args_dict: Dictionary of flux arg keys and name: value pairs
+        :type args_dict: dict
+        :param group_name: Optional name of group/tag to use in log messages
+                           when filtering_unknown is on
+        :type group_name: str
+        :param filter_unknown: flag to block pass through of unknown args, e.g.
+                               for allocation where we can't handle arbitrary
+        :type filter_unknown: bool
+        :return: dict of packed args with top level keys being the adapter
+                 version specific addtl_alloc_arg_types
+        """
+        return args_dict
