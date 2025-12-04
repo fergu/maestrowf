@@ -295,7 +295,7 @@ See two simplified Maestro specifications and generated batch scripts with these
       
     study:
         - name: step1
-          description: Sample step that only uses part of a node (allocation packing)
+          description: Sample step that grabs exclusive use of a node even with only one task
           run:
               cmd: |
                   $(LAUNCHER) small_application
@@ -311,11 +311,13 @@ See two simplified Maestro specifications and generated batch scripts with these
 
 === "Generated Batch Script"
 
-    Assuming the step is launched inside an allocation where there are no queues (-q directive omitted):
+    Assuming the step is launched at the root level (step gets it's own allocation):
     
     ``` console
+    #flux: -N 1
     #flux: -n 1
     #flux: -c 1
+    #flux: -q debug
     #flux: --bank=guests
     #flux: -t 60s
     
