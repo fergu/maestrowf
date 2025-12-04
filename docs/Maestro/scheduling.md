@@ -271,7 +271,97 @@ flux run -n 1 -N 1 -c 1 --setopt=optiona  myapplication
 !!! note
 
     Using flux directives here to illustrate even though python api is used.  These directives will be in the step scripts, retaining repeatability/record of what was submitted and viewable with the dry run feature.  The batch/allocation arguments are normalized to the long form (`--setattr` instead of `-S`) and will show up that way in the serialized batch scripts.
-   
+
+### Binding Mode
+----
+
+The `binding mode` key was added to steps in Maestro version :material-tag:`1.1.12` (currently flux only, other to follow).  This key enables control of whether to attach nodes/tasks info to the batch job/jobspec and/or to the `$(LAUNCHER)` generated flux run calls independently.  Whether you want Nodes attached to either one is context dependent:
+
+* `True`: Launching a job that wants exclusive use of a Node, even on core scheduled partitions (Exclusive job example)
+* `False`: Launching a job that to a nested broker (an existing allocation/batch job) that only needs a slice of a single node (Small, nested/non-exclusive job example)
+
+See two simplified Maestro specifications and generated batch scripts with these new options
+
+#### Exclusive job
+---
+=== "Maestro Specification"
+
+    ``` yaml
+    batch:
+      type: flux
+      host: machineA
+      bank: guests
+      queue: debug
+      
+    study:
+        - name: step1
+          description: Sample step that only uses part of a node (allocation packing)
+          run:
+              cmd: |
+                  $(LAUNCHER) small_application
+                
+              procs: 1
+              nodes: 1
+              walltime: "00:01:00"
+              binding mode:
+                allocation: tasks and nodes
+                launcher: tasks only
+    
+    ```
+
+=== "Generated Batch Script"
+
+    Assuming the step is launched inside an allocation where there are no queues (-q directive omitted):
+    
+    ``` console
+    #flux: -n 1
+    #flux: -c 1
+    #flux: --bank=guests
+    #flux: -t 60s
+    
+    flux run -n 1 -c 1 small_application
+    ```
+
+#### Small, nested/non-exclusive job
+---
+=== "Maestro Specification"
+
+    ``` yaml
+    batch:
+      type: flux
+      host: machineA
+      bank: guests
+      queue: debug
+      
+    study:
+        - name: step1
+          description: Sample step that only uses part of a node (allocation packing)
+          run:
+              cmd: |
+                  $(LAUNCHER) small_application
+                
+              procs: 1
+              nodes: 1
+              walltime: "00:01:00"
+              binding mode:
+                allocation: tasks only
+                launcher: tasks only
+    
+    ```
+
+=== "Generated Batch Script"
+
+    Assuming the step is launched inside an allocation where there are no queues (-q directive omitted):
+    
+    ``` console
+    #flux: -n 1
+    #flux: -c 1
+    #flux: --bank=guests
+    #flux: -t 60s
+    
+    flux run -n 1 -c 1 small_application
+    ```
+
 ## LSF: a Tale of Two Launchers
 ----
 

@@ -430,13 +430,14 @@ before using them:
 |  **Key**         | **Type**     | **Description**                                               |
 |    :-            |   :-:        |       :-                                                      |
 | `cores per task` |   str/int    | Number of cores to use for each task        |
-|  `exclusive`     |   str        | Flag for ensuring batch job has exclusive access to it's requested resources |
+|  `exclusive`     |   str/mapping| Flag for ensuring batch job has exclusive access to it's requested resources |
 |  `gpus`          |   str/int    | Number of gpus to allocate with this step |
 |  `tasks per rs`  |   str/int    | Number of tasks per resource set (LSF/jsrun) |
 |  `rs per node`   |   str/int    | Number of resource sets per node |
 |  `cpus per rs`   |   str/int    | Number of cpus in each resource set |
 |  `bind`          |   str        | Controls binding of tasks in resource sets |
 |  `bind gpus`     |   str        | Controls binding of gpus in resource sets |
+|  `binding mode`  |   mapping    | Controls whether to bind nodes/tasks to allocation directives/launcher args |
 
 
 ## Parameters: `global.parameters`
