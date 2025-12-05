@@ -113,6 +113,15 @@
               }
             ]
           },
+          "resource binding mode": {
+            "type": "object",
+            "properties": {
+              "anyOf": [
+                "allocation": {"type": "string"},
+                "launcher": {"type": "string"}
+              ]
+            }
+          },
           "nested": {"type": "boolean"},
           "waitable": {"type": "boolean"},  
           "priority": {
