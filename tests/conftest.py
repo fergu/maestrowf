@@ -1,5 +1,6 @@
 from collections import defaultdict
 import difflib
+import fnmatch
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ import re
 import shutil
 from subprocess import check_output
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, List, Optional, Pattern, Union
 
 import pprint
 import pytest
@@ -16,16 +17,16 @@ import pytest
 from maestrowf.datastructures.core import Study
 from maestrowf.datastructures.environment import Variable
 from maestrowf.specification import YAMLSpecification
-
 from maestrowf.utils import (
     create_parentdir,
     LoggerUtility,
     make_safe_path,
     parse_version
 )
+
 from packaging.version import InvalidVersion
 
-SCHEDULERS = set(('sched_lsf', 'sched_slurm', 'sched_flux'))
+SCHEDULERS = set(('sched_lsf', 'sched_slurm', 'sched_flux', 'sched_local'))
 SCHED_CHECKS = defaultdict(lambda: False)
 
 
@@ -95,6 +96,20 @@ def check_flux():
 
 
 SCHED_CHECKS['sched_flux'] = check_flux
+
+
+def check_local():
+    """
+    Dummy check for the local scheduler which should always be present.
+
+    Returns
+    -------
+    True
+    """
+    return True
+
+
+SCHED_CHECKS['sched_local'] = check_local
 
 
 def check_for_scheduler(sched_name):
@@ -778,3 +793,157 @@ def generate_jobspec_from_script():
         return jobspec
 
     return _generate
+
+@pytest.fixture
+def normalize_workspace_token(workspace_str: str, study_root: Path):
+    """
+    Helper for checking proper workspace token substitution in step scripts.
+    Makes workspace path relative to study_root to account for tests running
+    from anywhere, precluding use of full paths in expected value tests.
+    """
+    # NOTE: does this handle workspace_str having '/' in it already?
+    return study_root.resolve() / workspace_str
+
+
+
+class PathNotFoundError(AssertionError):
+    pass
+
+# @pytest.fixture
+# def assert_path_in_file_is_relative_to(request):
+def assert_path_in_file_is_relative_to(
+    file_path: Path,
+    *,
+    workspace_root: Path,
+    line_prefix_regex: Optional[Pattern[str]] = None,
+    path_regex: Pattern[str],
+) -> Path:
+    """
+    Search `file_path` for a line that optionally matches `line_prefix_regex`,
+    then extract a path via `path_regex`.
+
+    Example path_regex: re.compile(r"This workspace:\s+(?P<path>\S+)")
+    or: re.compile(r'workspace:\s+(?P<path>/\S+)')
+
+    Asserts that:
+      - The path is absolute
+      - It is inside `workspace_root`
+    Returns the relative path (Path object) from `workspace_root` to that path.
+    """
+    text = file_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    for idx, line in enumerate(lines, start=1):
+        if line_prefix_regex is not None:
+            if not line_prefix_regex.search(line):
+                continue
+
+        m = path_regex.search(line)
+        if not m:
+            continue
+
+        raw_path = m.group("path") if "path" in m.groupdict() else m.group(0)
+        abs_path = Path(raw_path)
+
+        assert abs_path.is_absolute(), (
+            f"Expected an absolute path in {file_path} line {idx}, got {raw_path!r}"
+        )
+        workspace_root = workspace_root.resolve()
+        abs_path = abs_path.resolve()
+
+        try:
+            rel = abs_path.relative_to(workspace_root)
+        except ValueError as exc:
+            raise AssertionError(
+                f"Path {abs_path} (from {file_path} line {idx}) is not under workspace root {workspace_root}"
+            ) from exc
+
+        return rel
+
+    raise PathNotFoundError(
+        f"No line in {file_path} matched line_prefix_regex={line_prefix_regex} "
+        f"and path_regex={path_regex.pattern!r}"
+    )
+
+    # return _assert_path_in_file_is_relative_to
+
+@pytest.fixture
+def relative_path_checker():
+    """
+    Fixture that returns a function to assert that a path inside a file
+    is relative to a given workspace root, and give you the relative path.
+    """
+    def _check(
+        file_path: Path,
+        *,
+        workspace_root: Path,
+        line_prefix: Optional[str] = None,
+        path_pattern: str,
+    ) -> Path:
+        """
+        Convenience wrapper that builds regex objects from simple args.
+
+        - line_prefix: simple text prefix to identify the line, or None
+        - path_pattern: a regex with named group 'path', e.g.
+            r"This workspace:\s+(?P<path>\S+)"
+        """
+        line_prefix_regex = None
+        if line_prefix is not None:
+            line_prefix_regex = re.compile(re.escape(line_prefix))
+
+        path_regex = re.compile(path_pattern)
+
+        return assert_path_in_file_is_relative_to(
+            file_path=file_path,
+            workspace_root=workspace_root,
+            line_prefix_regex=line_prefix_regex,
+            path_regex=path_regex,
+        )
+
+    return _check
+
+# @pytest.fixture
+# def step_workspace_token_checker():
+
+@pytest.fixture
+def fs_layout_checker():
+    """
+    Fixture for checking that specific relative directories/files exist
+    under a given workspace root, without hardcoding absolute paths.
+    """
+    def _expect_dir(workspace_root: Path, rel_dir: Union[str, Path]) -> Path:
+        rel_dir = Path(rel_dir)
+        full = workspace_root / rel_dir
+        assert full.is_dir(), f"Expected directory {rel_dir} under {workspace_root}, but it does not exist"
+        return full
+
+    def _expect_file_pattern(
+        workspace_root: Path,
+        rel_dir: Union[str, Path],
+        pattern: str,
+    ) -> List[Path]:
+        """
+        Assert that at least one file in `rel_dir` matches `pattern`
+        (shell-style, like 'hello_world_instance_0_*.sh').
+
+        Returns matching Path objects.
+        """
+        rel_dir = Path(rel_dir)
+        full_dir = workspace_root / rel_dir
+        assert full_dir.is_dir(), f"Expected directory {rel_dir} under {workspace_root}, but it does not exist"
+
+        matches: List[Path] = []
+        for child in full_dir.iterdir():
+            if child.is_file() and fnmatch.fnmatch(child.name, pattern):
+                matches.append(child)
+
+        assert matches, (
+            f"No files in {rel_dir} under {workspace_root} match pattern {pattern!r}. "
+            f"Files existing: {[c for c in full_dir.iterdir() if c.is_file()]}"
+        )
+        return matches
+
+    class Checker:
+        expect_dir = staticmethod(_expect_dir)
+        expect_file_pattern = staticmethod(_expect_file_pattern)
+
+    return Checker
