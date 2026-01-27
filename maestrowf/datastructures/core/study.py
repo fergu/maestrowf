@@ -42,6 +42,9 @@ from maestrowf.datastructures.dag import DAG
 from maestrowf.utils import apply_function, create_parentdir, make_safe_path
 from .executiongraph import ExecutionGraph
 
+from rich.console import Console
+console = Console()
+
 LOGGER = logging.getLogger(__name__)
 SOURCE = "_source"
 WSREGEX = re.compile(
@@ -151,6 +154,14 @@ class StudyStep:
         : returns: True if other is not equal to self, False otherwise.
         """
         return not self.__eq__(other)
+
+    def __rich_repr__(self):
+        """Implement more helpful string representation for debugging via rich"""
+        yield 'Name', self._name
+        yield 'Nickname', self.nickname
+        # yield 'Base name', self._base_name
+        yield 'Description', self.description
+        yield 'Run block', self.run
 
 
 class Study(DAG, PickleInterface):

@@ -105,3 +105,9 @@ class Variable(Substitution):
         :returns: A string with the token form of the variable.
         """
         return self.get_var()
+
+    def __rich_repr__(self):
+        """Helper for nicer 'print' views with rich"""
+        yield 'name', self.name
+        yield 'value', self.value
+        yield 'token', self.token

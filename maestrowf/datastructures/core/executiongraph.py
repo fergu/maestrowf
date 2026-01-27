@@ -19,6 +19,8 @@ from maestrowf.interfaces import ScriptAdapterFactory
 from maestrowf.utils import create_parentdir, get_duration, \
     round_datetime_seconds
 
+from rich.console import Console
+console=Console()
 LOGGER = logging.getLogger(__name__)
 SOURCE = "_source"
 
@@ -313,6 +315,15 @@ class _StepRecord:
         :returns: An int representing the number of restarts.
         """
         return self._num_restarts
+
+    def __rich_repr__(self):
+        """Implement more helpful string representation for debugging via rich"""
+        yield "step", self.step
+        yield "name", self.name
+        yield "workspace", self.workspace
+        yield "script", self.script
+        yield "params", self._params
+        yield "status", self.status
 
 
 class ExecutionGraph(DAG, PickleInterface):
