@@ -663,16 +663,30 @@ class Study(DAG, PickleInterface):
                 if self._hash_ws:
                     console.print(f"parameters: {self.parameters}")
                     # Make this a set -> prune the duplicates here!
+                    
                     u_combos = [combo.get_param_string(self.used_params[step])
                                 for combo in self.parameters]
 
+                    seen_u_combos = set()
+                    u_combo_indices = []
+                    for u_idx, u_combo in enumerate(u_combos):
+                        if u_combo in seen_u_combos:
+                            continue
+                        seen_u_combos.add(u_combo)
+                        u_combo_indices.append(u_idx)
+                        
                     # Setup zero padding sorted ordering
-                    pad_width = len(str(len(u_combos) - 1))
+                    pad_width = len(str(len(u_combo_indices) - 1))
 
-                    u_hashmap = {
-                        u_combo: f'{step}_instance_{idx:0{pad_width}d}'
-                        for idx, u_combo in enumerate(u_combos)
-                    }
+                    u_hashmap = {}
+                    for new_idx, orig_idx in enumerate(u_combo_indices):
+                        u_combo = u_combos[orig_idx]
+                        u_hashmap[u_combo] = f'{step}_instance_{new_idx:0{pad_width}d}'
+                        
+                    # u_hashmap = {
+                    #     u_combo: f'{step}_instance_{idx:0{pad_width}d}'
+                    #     for new_idx, orig_idx in enumerate(u_combo_indices)
+                    # }
                     console.print(f"u_combos: {u_combos}")
                     console.print(f"u_hashmap: {u_hashmap}")
 
