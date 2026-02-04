@@ -42,6 +42,9 @@ from maestrowf.datastructures.dag import DAG
 from maestrowf.utils import apply_function, create_parentdir, make_safe_path
 from .executiongraph import ExecutionGraph
 
+from rich.console import Console
+console = Console()
+
 LOGGER = logging.getLogger(__name__)
 SOURCE = "_source"
 WSREGEX = re.compile(
@@ -151,6 +154,14 @@ class StudyStep:
         : returns: True if other is not equal to self, False otherwise.
         """
         return not self.__eq__(other)
+
+    def __rich_repr__(self):
+        """Implement more helpful string representation for debugging via rich"""
+        yield 'Name', self._name
+        yield 'Nickname', self.nickname
+        # yield 'Base name', self._base_name
+        yield 'Description', self.description
+        yield 'Run block', self.run
 
 
 class Study(DAG, PickleInterface):
@@ -468,7 +479,7 @@ class Study(DAG, PickleInterface):
         """
         Set up the ExecutionGraph of a parameterized study.
 
-        :param throttle: Maximum number of in progress jobs allowed.
+        :param dag: Execution Graph to populate with expanded workflow dag.
         :returns: The path to the study's global workspace and an expanded
             ExecutionGraph based on the parameters and parameterized workflow
             steps.
@@ -647,6 +658,30 @@ class Study(DAG, PickleInterface):
                     "---------------------------------",
                     step, self.used_params[step]
                 )
+
+                # Precompute sortable 'hash'
+                if self._hash_ws:
+                    # Make this a set -> prune the duplicates here!
+                    
+                    u_combos = [combo.get_param_string(self.used_params[step])
+                                for combo in self.parameters]
+
+                    seen_u_combos = set()
+                    u_combo_indices = []
+                    for u_idx, u_combo in enumerate(u_combos):
+                        if u_combo in seen_u_combos:
+                            continue
+                        seen_u_combos.add(u_combo)
+                        u_combo_indices.append(u_idx)
+                        
+                    # Setup zero padding sorted ordering
+                    pad_width = len(str(len(u_combo_indices) - 1))
+
+                    u_hashmap = {}
+                    for new_idx, orig_idx in enumerate(u_combo_indices):
+                        u_combo = u_combos[orig_idx]
+                        u_hashmap[u_combo] = f'{step}_instance_{new_idx:0{pad_width}d}'
+                        
                 # Now we iterate over the combinations and expand the step.
                 for combo in self.parameters:
                     LOGGER.info("\n**********************************\n"
@@ -659,10 +694,10 @@ class Study(DAG, PickleInterface):
                     # We must encode explicitly to utf-8
                     # combo_str = combo_str.encode("utf-8")
                     if self._hash_ws:
-                        nickname = md5(combo_str.encode("utf-8")).hexdigest()
-                        workspace = make_safe_path(
-                                        self._out_path,
-                                        *[step, nickname])
+                        # Do we want to use combo_str as an 'id'? -> workspaces attribute does!
+                        nickname = u_hashmap[combo_str]
+                        workspace = make_safe_path(self._out_path, *[step, nickname])
+
                     else:
                         workspace = \
                             make_safe_path(self._out_path, *[step, combo_str])
@@ -718,6 +753,7 @@ class Study(DAG, PickleInterface):
 
                     step_exp.run["cmd"] = cmd
                     step_exp.run["restart"] = r_cmd
+
                     # Add to the step to the DAG.
                     dag.add_step(
                         step_exp.real_name, step_exp, workspace, rlimit,
@@ -884,4 +920,7 @@ class Study(DAG, PickleInterface):
 
         dag.detect_cycle = MethodType(_pass_detect_cycle, dag)
 
-        return self._out_path, self._stage(dag)
+        # Expand all the parameterized nodes/steps
+        expanded_graph = self._stage(dag)
+
+        return self._out_path, expanded_graph
