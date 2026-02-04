@@ -208,6 +208,8 @@ def test_hello_world_local(samples_spec_path,
     assert completed_successfully
     assert spec_results.returncode == 0
 
+    directory = tmp_outdir
+
     # Check expected work spaces, scripts, and script contents
     for expected_step_instance in expected_step_info:
         expected_workspace: Path = directory / expected_step_instance['step_workspace']
