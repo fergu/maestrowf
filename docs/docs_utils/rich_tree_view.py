@@ -159,7 +159,7 @@ def export_svg(
 
     _theme = theme or SVG_EXPORT_THEME
 
-    width = self.width
+    width = 90 # self.width
     # char_height = 20
     char_width = char_height * font_aspect_ratio # 0.61
     line_height = char_height * 1.22

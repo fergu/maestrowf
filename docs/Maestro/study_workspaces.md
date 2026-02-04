@@ -4,7 +4,7 @@ A critical part of Maestro's design is managing study workspaces.  The motivatin
 
 In this section we'll be working with variants of the multi-step demo spec shown below for all examples and discussion:
 
-## Workspaces Demo Study Spec
+## Workspaces Demo Study Specification
 
 ``` yaml
 description:
@@ -126,9 +126,20 @@ Currently the only two ways to control step workspace names are via the string t
 
 #### MD5 algorithm (pre-:material-tag:`1.1.12`)
 
-Initial implementation simply ran the string form of the steps' parameter combination through the md5 hashing algorithm.  While this guarantees uniqueness, and limits the size of the resulting paths, it is not very human friendly:  
+Initial implementation simply ran the string form of the steps' parameter combination through the md5 hashing algorithm.  While this guarantees uniqueness, and does a good job limiting the size of the resulting paths, it is not very human friendly:
 
-Insert example
+| **Used Combo \#**   | **Sorted Parameter Values**   | **Hashed step id/workspace** |
+| :-----------:       | :---------:                   | :---------:                  |
+| donor-sim used combo 0 | RES: 1                     | `00785611274b5201d4058812b1326c60`    |
+| donor-sim used combo 1 | RES: 2                     | `8fe14927377d4a9c76fd6b832a7968e6`    |
+| acceptor-sim used combo 0 | RES: 1, SHIFT_X: 3      | `c240436b548b7a906b4ab887a3a4fcb1`    |
+| acceptor-sim used combo 1 | RES: 1, SHIFT_X: 5      | `72f3ee1f2f7269db8fcee89c6fa2214b`    |
+| acceptor-sim used combo 2 | RES: 2, SHIFT_X: 3      | `93398560d67d2eb3919677ce6ab9b39b`    |
+| acceptor-sim used combo 3 | RES: 2, SHIFT_X: 5      | `789d8bbc9d7bca6b45441541574dfdd2`    |
+
+
+![Workspaces Demo Study Layout With MD5 Step Hashing](../assets/images/examples/workspaces/md5_hashed_study_workspace.svg)
+
 
 #### Sortable Hash (>=:material-tag:`1.1.12`)
 
