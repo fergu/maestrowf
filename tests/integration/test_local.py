@@ -3,7 +3,6 @@ from pathlib import Path
 import re
 from shutil import rmtree
 from subprocess import run
-# import tempfile
 
 import pytest
 
@@ -15,42 +14,8 @@ console = Console()
 pytestmark = [pytest.mark.sched_local,
               pytest.mark.integration,]
 
-
-# @pytest.mark.parametrize(
-#     "spec_name, tmp_dir, expected_step_info",
-#     [
-#         (
-#             "hello_bye_parameterized_staged.yaml",
-#             "HELLO_BYE_STAGED_LOCAL",
-#             (
-#                 Path("stage") / "stage.sh",
-#                 Path("hello_world") / "hello_world_instance_0" / "hello_world_instance_0.sh",
-#                 Path("hello_world") / "hello_world_instance_1" / "hello_world_instance_1.sh",
-#                 Path("hello_world") / "hello_world_instance_2" / "hello_world_instance_2.sh",
-#                 Path("hello_world") / "hello_world_instance_3" / "hello_world_instance_3.sh",
-#             ),
-#             (
-#                 (
-#                     ("This workspace:", "hello_world/hello_world_instance_0"),
-#                     ("stage workspace:", "stage"),
-#                 ),
-#                 (
-#                     ("This workspace:", "hello_world/hello_world_instance_1"),
-#                     ("stage workspace:", "stage"),
-#                 ),
-#                 (
-#                     ("This workspace:", "hello_world/hello_world_instance_2"),
-#                     ("stage workspace:", "stage"),
-#                 ),
-#                 (
-#                     ("This workspace:", "hello_world/hello_world_instance_3"),
-#                     ("stage workspace:", "stage"),
-#                 )
-#             )
-#          ),
-#     ]
-# )
-
+# TODO: need alternate parameterized data setup, this has exceeded
+#       parametrize's readability limits..  json/yaml for expected data?
 @pytest.mark.parametrize(
     "spec_name, tmp_dir, expected_step_info",
     [
@@ -234,63 +199,12 @@ def test_hello_world_local(samples_spec_path,
         study_name
     )
 
+    # Debug outputs for test failures: print before asserts to ensure execution
     console.rule("stdout")
     console.print(spec_results.stdout)
     console.rule("stderr")
     console.print(spec_results.stderr)
 
-    """
-    Demonstrates how to display a tree of files / directories with the Tree renderable.
-    """
-
-    # import os
-    import pathlib
-    # import sys
-
-    # from rich import print
-    from rich.filesize import decimal
-    from rich.markup import escape
-    from rich.text import Text
-    from rich.tree import Tree
-
-
-    def walk_directory(directory: pathlib.Path, tree: Tree) -> None:
-        """Recursively build a Tree with directory contents."""
-        # Sort dirs first then by filename
-        paths = sorted(
-            pathlib.Path(directory).iterdir(),
-            key=lambda path: (path.is_file(), path.name.lower()),
-        )
-        for path in paths:
-            # Remove hidden files
-            if path.name.startswith("."):
-                continue
-            if path.is_dir():
-                style = "dim" if path.name.startswith("__") else ""
-                branch = tree.add(
-                    f"[bold magenta]:open_file_folder: [link file://{path}]{escape(path.name)}",
-                    style=style,
-                    guide_style=style,
-                )
-                walk_directory(path, branch)
-            else:
-                text_filename = Text(path.name, "green")
-                text_filename.highlight_regex(r"\..*$", "bold red")
-                text_filename.stylize(f"link file://{path}")
-                file_size = path.stat().st_size
-                text_filename.append(f" ({decimal(file_size)})", "blue")
-                icon = "🐍 " if path.suffix == ".py" else "📄 "
-                tree.add(Text(icon) + text_filename)
-
-    directory = tmp_outdir
-    tree = Tree(
-        f":open_file_folder: [link file://{directory}]{directory}",
-        guide_style="bold bright_blue",
-    )
-    walk_directory(pathlib.Path(directory), tree)
-    console.print(tree)
-
-    # console.print(spec_results.stderr)
     assert completed_successfully
     assert spec_results.returncode == 0
 
@@ -333,4 +247,5 @@ def test_hello_world_local(samples_spec_path,
 
     # Cleanup if successful
     if os.path.exists(tmp_outdir):
+        # NOTE: do we need to do this? doesn't pytest do autocleanup?
         rmtree(tmp_outdir, ignore_errors=True)  # recursively delete workspace

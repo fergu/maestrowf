@@ -661,7 +661,6 @@ class Study(DAG, PickleInterface):
 
                 # Precompute sortable 'hash'
                 if self._hash_ws:
-                    console.print(f"parameters: {self.parameters}")
                     # Make this a set -> prune the duplicates here!
                     
                     u_combos = [combo.get_param_string(self.used_params[step])
@@ -683,13 +682,6 @@ class Study(DAG, PickleInterface):
                         u_combo = u_combos[orig_idx]
                         u_hashmap[u_combo] = f'{step}_instance_{new_idx:0{pad_width}d}'
                         
-                    # u_hashmap = {
-                    #     u_combo: f'{step}_instance_{idx:0{pad_width}d}'
-                    #     for new_idx, orig_idx in enumerate(u_combo_indices)
-                    # }
-                    console.print(f"u_combos: {u_combos}")
-                    console.print(f"u_hashmap: {u_hashmap}")
-
                 # Now we iterate over the combinations and expand the step.
                 for combo in self.parameters:
                     LOGGER.info("\n**********************************\n"
@@ -703,8 +695,6 @@ class Study(DAG, PickleInterface):
                     # combo_str = combo_str.encode("utf-8")
                     if self._hash_ws:
                         # Do we want to use combo_str as an 'id'? -> workspaces attribute does!
-                        console.print(f"Type u_hashmap: {type(u_hashmap)}, key type: {type(combo_str)}")
-                        console.print(f"used_params: {combo_str}")
                         nickname = u_hashmap[combo_str]
                         workspace = make_safe_path(self._out_path, *[step, nickname])
 
@@ -763,7 +753,7 @@ class Study(DAG, PickleInterface):
 
                     step_exp.run["cmd"] = cmd
                     step_exp.run["restart"] = r_cmd
-                    console.print(f"{step}: {step_exp.real_name}: {workspace}")
+
                     # Add to the step to the DAG.
                     dag.add_step(
                         step_exp.real_name, step_exp, workspace, rlimit,
