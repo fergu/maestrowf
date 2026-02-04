@@ -25,11 +25,13 @@ study:
 	    echo "Used Parameters: RES: $(RES)"
 		
   - name: acceptor-sim
-    description: Simple step using all parameters
+    description: Simple dependent step using all parameters
 	run:
 	  cmd: |
 	    echo "Used Parameters: RES: $(RES), SHIFT_X: $(SHIFT_X)"
 		
+	  depends: [donor-sim]
+	  
 global.parameters:
   RES:
     values: [1, 1, 2, 2] # (2)
@@ -101,11 +103,11 @@ study:
 This `OUTPUT_PATH` is by default relative to `$(SPECROOT)`, which is the location of your study specification.  Inside of this directory Maestro will isolate each instance using the pattern `<study_name>_datetimestamp` where `<study_name>` is the description.name key in study specification.  Thus multiple repeated instances of a study can be executed simultaneously, modulo timestamp conflicts.  Below shows the directory containing our specification, `workspaces_demo.yaml`, and then the resulting `OUTPUT_PATH` directory setup relative to `SPECROOT` - the study specification location - with 6 executed instances of that study inside that containing directory:
 
 ![Specification Controlled Study Workspaces](../assets/images/examples/workspaces/spec_output_path.svg)
-insert some workspace tree snapshots
+
 
 ### CLI
 
-The `maestro run` command has an optional override (`-o`/`--out`) for the OUTPUT_PATH which has different behavior than the `OUTPUT_PATH` variable in the study specification: this is meant to be the direct workspace containing the study outputs, i.e. the timestamped directory.  This means isolation between multiple study instances is the caller's responsibility, with Maestro happily clobbering the old studies to put back in the same path.  You can nest them under something like 'WORKSPACES_DEMO' above manualy by adding it to the path string and Maestro will create both directories.  GNU Core Utilities' `date` command makes it trivial to recreate the timestamping pattern this way if you wish for fully cli parameterized control of the output directories:
+The `maestro run` command has an optional override (`-o`/`--out`) for the `OUTPUT_PATH` which has different behavior than the `OUTPUT_PATH` variable in the study specification: this is meant to be the direct workspace containing the study outputs, i.e. the timestamped directory.  This means isolation between multiple study instances is the caller's responsibility, with Maestro happily clobbering the old studies to put back in the same path.  You can nest them under something like 'WORKSPACES_DEMO' above manualy by adding it to the path string and Maestro will create both directories.  GNU Core Utilities' `date` command makes it trivial to recreate the timestamping pattern this way if you wish for fully cli parameterized control of the output directories:
 
 ``` shell
 maestro run workspaces_demo.yaml -o "workspaces_demo_manual_$(date +%Y%m%d-%H%M%S)"
@@ -122,19 +124,16 @@ As before, these paths are relative to `$(SPECROOT)`, i.e. where your yaml study
 
 ## Step Level Workspace Control
 
-Additional controls are provided for the parameterized instances of steps within study's via optional hashing.  The default behavior is to use string representations of the parameter combinations (via parameter's labels, i.e. 'PARAM.%%' formatter in global.parameters) run through path sanitizer to handle spaces and other invalid path characters.  For small studies, i.e. small numbers of parameters, this works reasonably well:
+Additional controls are provided for the parameterized instances of steps within study's via optional hashing.  The default behavior is to use string representations of the parameter combinations (via parameter's labels, i.e. `label: RES.%%` formatter in global.parameters) run through path sanitizer to handle spaces and other invalid path characters.  For small studies, i.e. small numbers of parameters, this works reasonably well:
 
 ![Workspaces Demo Study Layout](../assets/images/examples/workspaces/unhashed_study_workspace.svg)
 
 
-Some concerns to be mindful of here is that you may want to prevent the yaml readers from treating floats as actual floats due to the extra unwanted precision that can lead to if you're using simple numbers like 0.1, etc, that cannot be exactly represented in floating point form (note: python seems to handle printing at least some of these like 0.1 well, but some numbers will break this).  As these parameters are intended to go through the shell which treats everything as strings, it can be useful to preserve the original form until the parameter reaches your application, and as a side effect keep the step workspace directory names a little more readable
-
-
-Add note about path length concerns forcing the option in the next section
+Some concerns to be mindful of here is that you may want to prevent the yaml readers from treating floats as actual floats due to the extra unwanted precision that can lead to if you're using simple numbers like 0.1, etc, that cannot be exactly represented in floating point form (note: python seems to handle printing at least some of these like 0.1 well, but some numbers will break this).  As these parameters are intended to go through the shell which treats everything as strings, it can be useful to preserve the original form until the parameter reaches your application, and as a side effect keep the step workspace directory names a little more readable.  See the next section for other options/concerns for dealing with floats.
 
 ### Step workspace hashing
 
-Currently the only two ways to control step workspace names are via the string typing control of floats described above, and a cli argument to the `maestro run` command: `--hashws`.
+Currently the only two ways to control step workspace names are via the string typing control of floats described above, and a cli argument to the `maestro run` command: `--hashws`.  Hashing can be a critical option in certain studies; large numbers of parameters, parameters that may be specifying paths or other long strings, or string representations of floating point numbers that require full 17+ digits can all lead to exceeding the system path and/or name length limits.  Hashing is an option to mitigate this.  However, going forward the new sortable algorithm should prove more desirable for it's improved readability and compactness in all cases.
 
 #### MD5 algorithm (pre-:material-tag:`1.1.12`)
 
@@ -155,7 +154,7 @@ Initial implementation simply ran the string form of the steps' parameter combin
 
 #### Sortable Hash (>=:material-tag:`1.1.12`)
 
-In Maestro :material-tag:`1.1.12`, the md5 algorithm was replaced with an alternative that's more human readable, maintaining compactness, but also introducting sortable naming.  Technically this is not a hash function as it cannot be applied to parameter combination strings independently, rather requiring knowledge of all instances of a step to apply a count based identifier.  The format of this is as follows:
+In Maestro >:material-tag:`1.1.11`, the md5 algorithm is replaced with an alternative that's more human readable, maintaining compactness, but also introducting sortable naming.  Technically this is not a hash function as it cannot be applied to parameter combination strings independently, rather requiring knowledge of all instances of a step to apply a count based identifier.  The format of this is as follows:
 
 
 | **Used Combo \#**   | **Sorted Parameter Values** | **Hashed step id/workspace** |
