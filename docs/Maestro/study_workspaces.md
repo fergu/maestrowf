@@ -98,15 +98,27 @@ study:
 
 1. Contain all instances of this study (one per `maestro run ...` call) in this directory
 
-This `OUTPUT_PATH` is by default relative to `$(SPECROOT)`, which is the location of your study specification.  Inside of this directory Maestro will isolate each instance using the pattern `<study_name>_datetimestamp` where `<study_name>` is the description.name key in study specification.  Thus multiple repeated instances of a study can be executed simultaneously, modulo timestamp conflicts.
+This `OUTPUT_PATH` is by default relative to `$(SPECROOT)`, which is the location of your study specification.  Inside of this directory Maestro will isolate each instance using the pattern `<study_name>_datetimestamp` where `<study_name>` is the description.name key in study specification.  Thus multiple repeated instances of a study can be executed simultaneously, modulo timestamp conflicts.  Below shows the directory containing our specification, `workspaces_demo.yaml`, and then the resulting `OUTPUT_PATH` directory setup relative to `SPECROOT` - the study specification location - with 6 executed instances of that study inside that containing directory:
 
+![Specification Controlled Study Workspaces](../assets/images/examples/workspaces/spec_output_path.svg)
 insert some workspace tree snapshots
 
 ### CLI
 
-The `maestro run` command has an optional override for the OUTPUT_PATH which has different behavior than the `OUTPUT_PATH` variable in the study specification: this is meant to be the direct workspace containing the study outputs, i.e. the timestamped directory.  This means isolation between multiple study instances is the caller's responsibility.
+The `maestro run` command has an optional override (`-o`/`--out`) for the OUTPUT_PATH which has different behavior than the `OUTPUT_PATH` variable in the study specification: this is meant to be the direct workspace containing the study outputs, i.e. the timestamped directory.  This means isolation between multiple study instances is the caller's responsibility, with Maestro happily clobbering the old studies to put back in the same path.  You can nest them under something like 'WORKSPACES_DEMO' above manualy by adding it to the path string and Maestro will create both directories.  GNU Core Utilities' `date` command makes it trivial to recreate the timestamping pattern this way if you wish for fully cli parameterized control of the output directories:
 
-insert example using datetime cmd on the shell to replicate study supplied output path
+``` shell
+maestro run workspaces_demo.yaml -o "workspaces_demo_manual_$(date +%Y%m%d-%H%M%S)"
+```
+
+Or the nested variant, recreating the hierarchical structure with each run call as the default behavior:
+
+```shell
+maestro run workspaces_demo.yaml -o "MANUAL_OUTPUT_DIR/workspaces_demo_manual_$(date +%Y%m%d-%H%M%S)"
+```
+
+As before, these paths are relative to `$(SPECROOT)`, i.e. where your yaml study specification is located.
+
 
 ## Step Level Workspace Control
 
