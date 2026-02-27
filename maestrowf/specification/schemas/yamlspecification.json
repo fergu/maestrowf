@@ -113,14 +113,39 @@
               }
             ]
           },
-          "resource binding mode": {
+          "resource mapping": {
             "type": "object",
             "properties": {
-              "anyOf": [
-                "allocation": {"type": "string"},
-                "launcher": {"type": "string"}
-              ]
-            }
+              "allocation": {
+                "type": "object",
+                "properties": {
+                  "nodes": { "type": "boolean" },
+                  "tasks": { "type": "boolean" }
+                },
+                "additionalProperties": false,
+                "anyOf": [
+                  { "required": ["nodes"] },
+                  { "required": ["tasks"] }
+                ]
+              },
+              "launcher": {
+                "type": "object",
+                "properties": {
+                  "nodes": { "type": "boolean" },
+                  "tasks": { "type": "boolean" }
+                },
+                "additionalProperties": false,
+                "anyOf": [
+                  { "required": ["nodes"] },
+                  { "required": ["tasks"] }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "anyOf": [
+              { "required": ["allocation"] },
+              { "required": ["launcher"] }
+            ]
           },
           "nested": {"type": "boolean"},
           "waitable": {"type": "boolean"},  

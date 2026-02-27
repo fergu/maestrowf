@@ -88,6 +88,16 @@ def test_load_spec(spec_path):
             ValidationError,
             "Unrecognized key 'bad' found in study step",
         ),
+        (
+            "error_resource_mapping_1.yaml",
+            ValidationError,
+            "Unrecognized key 'alloc' found in study step 'hello_world'",
+        ),
+        (
+            "error_resource_mapping_2.yaml",
+            ValidationError,
+            "In study step 'hello_world', run.resource mapping.allocation.tasks must be of type 'boolean'",
+        )
     ],
 )
 def test_validate_error(spec_path, spec, error, error_txt):
@@ -97,6 +107,40 @@ def test_validate_error(spec_path, spec, error, error_txt):
         assert error_txt in value_error.value.message
     else:
         assert error_txt in value_error.value.args[0]
+
+
+@pytest.mark.parametrize(
+    "spec, expected_resource_map, step_name",
+    [
+        (
+            "valid_resource_mapping_1.yaml",
+            {
+                "allocation": {
+                    "tasks": False
+                },
+                "launcher": {
+                    "nodes": False,
+                    "tasks": True,
+                }
+            },
+            "hello_world"
+        ),
+    ],
+)
+def test_validate_step_resource_mapping(spec_path, spec, expected_resource_map, step_name):
+    # NOTE: might want to pull in that dict diffing package for some of this?
+    spec = YAMLSpecification.load_specification(spec_path(spec))
+    steps = spec.get_study_steps()
+
+    assert step_name in [step.name for step in steps]
+
+    resource_map = {}
+    for step in steps:
+        if step.name == step_name:
+            resource_map = step.run['resource mapping']
+            break
+
+    assert resource_map == expected_resource_map
 
 
 @pytest.mark.parametrize(

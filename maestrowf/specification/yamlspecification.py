@@ -46,6 +46,9 @@ from maestrowf.datastructures.core import (
 )
 from maestrowf.datastructures import environment
 
+from rich.traceback import install
+install(show_locals=True)
+
 logger = logging.getLogger(__name__)
 
 
@@ -426,7 +429,9 @@ class YAMLSpecification(Specification):
                 raise jsonschema.ValidationError(
                     f"In {parent_key}, {path} must be of type "
                     f"'{expected_type}', but found "
-                    f"'{type(instance[path]).__name__}'."
+                    f"'{type(error.instance).__name__}'."
+                    # Below can't work for nested keys: rework all this
+                    # f"'{type(instance[path]).__name__}'."
                 )
 
             elif error.validator == "required":
