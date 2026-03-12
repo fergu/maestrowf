@@ -430,7 +430,7 @@ before using them:
 | **Key**          | **Type**  | **Description**                                                              |
 |:-----------------|:---------:|:-----------------------------------------------------------------------------|
 | `cores per task` | str/int   | Number of cores to use for each task                                         |
-| `exclusive`      | bool/dict | Controls whether `--exclusive` is applied for HPC scheduling. Accepts either:<br><br>- **`bool`**: legacy shortcut, applies **only to the allocation/batch job** (equivalent to `{ allocation: true/false }`). This remains the common case.<br>- **`dict`**: set exclusivity independently for the allocation and the launcher. Supported keys:<br>  - `allocation` (bool): apply `--exclusive` to the batch job/allocation request.<br>  - `launcher` (bool): apply `--exclusive` to the job launcher command (for example `flux run`, `srun`, etc). |
+| `exclusive` | bool/dict | Request exclusive allocation of resources. Accepts either:<br><ul><li><strong><code>bool</code></strong>: legacy shortcut, applies <strong>only to the allocation/batch job</strong> (equivalent to <code>{ allocation: true/false }</code>). This is the most common usecase.</li><li><strong><code>dict</code></strong>: set exclusivity independently for the allocation and the launcher.<br>Supported keys:<ul><li><code>allocation</code> (bool): apply <code>--exclusive</code> to the batch job/allocation request.</li><li><code>launcher</code> (bool): apply <code>--exclusive</code> to the job launcher command (e.g. <code>flux run</code>, <code>srun</code>, etc).</li></ul></li></ul> |
 | `gpus`           | str/int   | Number of gpus to allocate with this step                                    |
 | `tasks per rs`   | str/int   | Number of tasks per resource set (LSF/jsrun)                                 |
 | `rs per node`    | str/int   | Number of resource sets per node                                             |
@@ -438,6 +438,128 @@ before using them:
 | `bind`           | str       | Controls binding of tasks in resource sets                                   |
 | `bind gpus`      | str       | Controls binding of gpus in resource sets                                    |
 
+
+#### Exclusive examples
+----
+
+!!! warning
+	
+	Many schedulers require specifying `nodes` when setting resource exclusivity.  Job failures may occur if
+	attempting to use `exclusive` without `nodes`, especially when used with launcher as not all schedulers
+	validate those launcher lines at job submission time (i.e. flux).  Maestro will also emit warnings and
+	errors in it's logs as it's building up the allocation and launcher configs, bit it does not yet stop
+	the study from executing
+	
+=== "Scalar exclusive"
+
+	
+    <div class="grid" markdown>
+    
+    ``` yaml title="Maestro step"
+    - name: run-exclusive-alloc
+      description: Simple exclusive allocation
+      run:
+          cmd: |
+            $(LAUNCHER) par_app_1
+          nodes: 2
+          procs: 72
+          exclusive   : True
+          walltime: "00:10:00
+    ```
+	
+	=== "slurm"
+	
+	    ``` bash title="Slurm batch script"
+		#SBATCH -N 1
+		...
+		#SBATCH --exclusive
+		srun -N 2 -n 72 myapplication
+        ```
+	
+	=== "flux"
+	
+    	``` bash title="flux batch script"
+		#flux: -N 1
+		...
+		#flux: --exclusive
+		flux run -N 2 -n 72 myapplication
+        ```
+	
+    </div>
+
+=== "Mapping exclusive: allocation only"
+
+
+    <div class="grid" markdown>
+    
+    ``` yaml title="Maestro step"
+    - name: run-exclusive-alloc
+      description: Simple exclusive allocation
+      run:
+          cmd: |
+            $(LAUNCHER) par_app_1
+          nodes: 2
+          procs: 72
+          exclusive: 
+		    allocation: true
+          walltime: "00:10:00
+    ```
+	
+	=== "slurm"
+	
+	    ``` bash title="Slurm batch script"
+		#SBATCH -N 1
+		...
+		#SBATCH --exclusive
+		srun -N 2 -n 72 myapplication
+        ```
+	
+	=== "flux"
+	
+    	``` bash title="flux batch script"
+		#flux: -N 1
+		...
+		#flux: --exclusive
+		flux run -N 2 -n 72 myapplication
+        ```
+    </div>
+	
+=== "Mapping exclusive: allocation and launcher"
+
+    <div class="grid" markdown>
+    
+    ``` yaml title="Maestro step"
+    - name: run-exclusive-alloc
+      description: Simple exclusive allocation
+      run:
+          cmd: |
+            $(LAUNCHER) par_app_1
+          nodes: 2
+          procs: 72
+          exclusive: 
+		    allocation: true
+			launcher: true
+          walltime: "00:10:00
+    ```
+	
+	=== "slurm"
+	
+	    ``` bash title="Slurm batch script"
+		#SBATCH -N 1
+		...
+		#SBATCH --exclusive
+		srun -N 2 -n 72 --exclusive myapplication
+        ```
+	
+	=== "flux"
+	
+    	``` bash title="flux batch script"
+		#flux: -N 1
+		...
+		#flux: --exclusive
+		flux run -N 2 -n 72 --exclusive myapplication
+        ```
+    </div>
 
 ## Parameters: `global.parameters`
 ----
