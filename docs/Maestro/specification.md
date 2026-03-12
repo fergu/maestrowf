@@ -427,16 +427,16 @@ Additionally there are more fine grained resource/scheduler control enabled by t
 The following keys are all optional and get into scheduler specific features.  See the respective sections
 before using them: 
 
-|  **Key**         | **Type**     | **Description**                                               |
-|    :-            |   :-:        |       :-                                                      |
-| `cores per task` |   str/int    | Number of cores to use for each task        |
-|  `exclusive`     |   str        | Flag for ensuring batch job has exclusive access to it's requested resources |
-|  `gpus`          |   str/int    | Number of gpus to allocate with this step |
-|  `tasks per rs`  |   str/int    | Number of tasks per resource set (LSF/jsrun) |
-|  `rs per node`   |   str/int    | Number of resource sets per node |
-|  `cpus per rs`   |   str/int    | Number of cpus in each resource set |
-|  `bind`          |   str        | Controls binding of tasks in resource sets |
-|  `bind gpus`     |   str        | Controls binding of gpus in resource sets |
+| **Key**          | **Type**  | **Description**                                                              |
+|:-----------------|:---------:|:-----------------------------------------------------------------------------|
+| `cores per task` | str/int   | Number of cores to use for each task                                         |
+| `exclusive`      | bool/dict | Controls whether `--exclusive` is applied for HPC scheduling. Accepts either:<br><br>- **`bool`**: legacy shortcut, applies **only to the allocation/batch job** (equivalent to `{ allocation: true/false }`). This remains the common case.<br>- **`dict`**: set exclusivity independently for the allocation and the launcher. Supported keys:<br>  - `allocation` (bool): apply `--exclusive` to the batch job/allocation request.<br>  - `launcher` (bool): apply `--exclusive` to the job launcher command (for example `flux run`, `srun`, etc). |
+| `gpus`           | str/int   | Number of gpus to allocate with this step                                    |
+| `tasks per rs`   | str/int   | Number of tasks per resource set (LSF/jsrun)                                 |
+| `rs per node`    | str/int   | Number of resource sets per node                                             |
+| `cpus per rs`    | str/int   | Number of cpus in each resource set                                          |
+| `bind`           | str       | Controls binding of tasks in resource sets                                   |
+| `bind gpus`      | str       | Controls binding of gpus in resource sets                                    |
 
 
 ## Parameters: `global.parameters`
