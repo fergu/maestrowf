@@ -442,6 +442,16 @@ before using them:
 #### Exclusive examples
 ----
 
+!!! info
+
+	Flux specifically has a behavior change in :material-tag:`1.2.0`: when using exclusive on the allocation
+	everything but the `nodes` key will be omitted from the allocation/batch script to force a single slot
+	per node with everything.  Prior behavior attached tasks (`procs`) to the allocation too, which could 
+	interfere with multiple Launcher task shapes, or in the case of configurable hardware (subdividing GPU's),
+	lead to failed job submissions due to unsatisfiable resource shapes.  If you have a use case for
+	configuring slots at the allocation level get in touch with us to discuss options/future features.
+	
+	
 !!! warning
 	
 	Many schedulers require specifying `nodes` when setting resource exclusivity.  Job failures may occur if
