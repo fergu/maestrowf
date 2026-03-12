@@ -95,7 +95,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         # NOTE: Host doesn"t seem to matter for FLUX. sbatch assumes that the
         # current host is where submission occurs.
-        self.add_batch_parameter("nodes", kwargs.pop("nodes", "1"))
+        # self.add_batch_parameter("nodes", kwargs.pop("nodes", "1"))
         self._allocation_args = kwargs.get("allocation_args", {})
         LOGGER.info(f"Allocation args: {self._allocation_args}")
         self._launcher_args = kwargs.get("launcher_args", {})
@@ -264,9 +264,25 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         batch_header["walltime"] = \
             str(self._convert_walltime_to_seconds(walltime))
 
-        if run["nodes"]:
+        # Unpack exclusive to modify procs/core per task
+        step_exclusive = step.run.get("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+
+        nodes = run.get("nodes", None)
+        LOGGER.info("Retrived 'nodes' from the step: '%s'", nodes)
+        print(f"INFO: retrieved 'nodes' from step: '{nodes}'")
+        if nodes is not None and nodes != '':  # catch nodes = 0 here?
             batch_header["nodes"] = run.pop("nodes")
-        if run["procs"]:
+
+        # Abusing 'truthiness' here to catch '' values too
+        elif not nodes and step_exclusive['allocation']:
+            LOGGER.error(
+                "Invalid use of exclusive on allocation: "
+                "exclusive can only be set with a node count"
+            )
+
+        if run["procs"] and not step_exclusive['allocation']:
             batch_header["procs"] = run.pop("procs")
         batch_header["job-name"] = step.name.replace(" ", "_")
         batch_header["comment"] = step.description.replace("\n", " ")
@@ -278,12 +294,11 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         modified_header = ["#!{}".format(self._exec)]
 
-        # Process INFO lines at the start to 
-        # lines starting tag+prefix (e.g. "#flux:" ) that doesn't match the flux directives
+        # Process INFO lines at the start to avoid interrupting flux directives
         for key, value in self._header_info.items():
             modified_header.append(value.format(**batch_header))
 
-        # Inject a blank # comment line between the flux directives for readability
+        # Inject a blank # comment line between the info/flux directives for readability
         modified_header.append("#")
 
         for key, value in self._header.items():
@@ -293,13 +308,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
             modified_header.append(value.format(**batch_header))
 
-        # Handle exclusive flag
-        # Handle the exclusive flags, updating batch block settings (default)
-        # with what's set in the step, if any given
-        step_exclusive = step.run.get("exclusive", None)
-
-        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
-
+        # Add exclusive flag to header if requested
         if step_exclusive['allocation']:
             modified_header.append(f"{self._flux_directive}" + "--exclusive")
 
@@ -322,7 +331,8 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: A string of the parallelize command configured using nodes
                   and procs.
         """
-        ntasks = nodes if nodes else self._batch.get("nodes", 1)
+        # nodes = nodes
+        # ntasks = nodes if nodes else self._batch.get("nodes", 1)
         
         # Handle the exclusive flags, updating batch block settings (default)
         # with what's set in the step, if any given
@@ -334,7 +344,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         kwargs['exclusive'] = step_exclusive['launcher']
 
         return self._interface.parallelize(
-            procs, nodes=ntasks, addtl_args=self._addl_args,
+            procs, nodes=nodes, addtl_args=self._addl_args,
             launcher_args=self._launcher_args, **kwargs)
 
     def submit(self, step, path, cwd, job_map=None, env=None):
@@ -350,14 +360,18 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: The return status of the submission command and job
                   identiifer.
         """
-        nodes = step.run.get("nodes", 1)
-        processors = step.run.get("procs", 0)
+        nodes = step.run.get("nodes", None)
+        processors = step.run.get("procs", 1)
 
-        if not isinstance(nodes, int):
-            if not nodes:
-                nodes = 1
-            else:
-                nodes = int(nodes)
+        if nodes == '':
+            nodes = None
+        if nodes is not None and nodes != '':  # Have to account for empty string!
+            nodes = int(nodes)
+        # if not isinstance(nodes, int):
+        #     if not nodes:
+        #         nodes = 1
+        #     else:
+        #         nodes = int(nodes)
 
         if not isinstance(processors, int):
             if not processors:
@@ -394,7 +408,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             raise val_error
 
         # Calculate nprocs
-        ncores = cores_per_task * nodes
+        ncores = cores_per_task * processors  # What was this check doing?
         # Raise an exception if ncores is 0
         if ncores <= 0:
             msg = "Invalid number of cores specified. " \
