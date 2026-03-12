@@ -16,12 +16,12 @@ batch:
         gpumode: CPX
       conf:
         resource:
-          rediscover: True # Flux wants 'true', not 'True' that python bool serializes to
+          rediscover: True
           noverify: True
         
     launcher_args:
       setopt:
-        fastload:
+        fastload: 
 
 
         

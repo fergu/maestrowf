@@ -37,6 +37,7 @@ study:
           cmd: |
             $(LAUNCHER) echo "$(GREETING), $(NAME)!" > $(OUT_FORMAT)
             $(LAUNCHER) sleep 1
+          nodes: 1
           procs: 1
           nested: True
           exclusive: True
