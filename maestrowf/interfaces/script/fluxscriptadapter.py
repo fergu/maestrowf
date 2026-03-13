@@ -448,9 +448,8 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
                 nodes, processors, cores_per_task, path, cwd, walltime, ngpus,
                 job_name=step.name, force_broker=force_broker, urgency=urgency,
                 waitable=waitable, queue=queue, bank=bank,
-                addtl_batch_args=packed_alloc_args, #self.pack_addtl_batch_args(),
+                addtl_batch_args=packed_alloc_args,
                 exclusive=step_exclusive['allocation'],
-                
             )
 
         return SubmissionRecord(submit_status, retcode, jobid)

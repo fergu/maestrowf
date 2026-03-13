@@ -38,6 +38,7 @@ study:
           cmd: |
             $(LAUNCHER) echo "$(GREETING), $(NAME)!" > $(OUT_FORMAT)
             $(LAUNCHER) sleep 1
+          nodes: 1              # Required for exclusive!
           procs: 1
           nested: True
           exclusive: True
@@ -55,12 +56,6 @@ study:
           depends: [hello_world]
 
 global.parameters:
-    # NAME:
-    #     values: [Pam, Jim, Michael, Dwight]
-    #     label: NAME.%%
-    # GREETING:
-    #     values: [Hello, Ciao, Hey, Hi]
-    #     label: GREETING.%%
     NAME:
         values: [Pam]
         label: NAME.%%

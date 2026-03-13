@@ -140,21 +140,14 @@ def test_flux_script_serialization(
         pprint(f"Step name: {step_name}")
         ex_graph._execute_record(step_record, adapter)
 
-        # pprint(step_name)
-        # pprint("Step record:")
-        # pprint(step_record)
-        # # pprint(_record)
-        # pprint("Written script:")
         with open(step_record.script, "r") as written_script_file:
             written_script = written_script_file.read()
-            # pprint(written_script.splitlines())
 
         assert step_name in expected_batch_files
 
         with open(variant_expected_output(expected_batch_files[step_name]), 'r') as ebf:
             expected_script = ebf.read()
 
-        # assert written_script == expected_script
         assert text_diff(written_script, expected_script, ignore_patterns=ignore_patterns)
 
 
