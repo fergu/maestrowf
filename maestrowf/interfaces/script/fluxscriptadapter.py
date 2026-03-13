@@ -362,7 +362,12 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         """
         nodes = step.run.get("nodes", None)
         processors = step.run.get("procs", 1)
+        
+        # Handle the exclusive flags, updating batch block settings (default)
+        # with what's set in the step, if any given
+        step_exclusive = step.run.get("exclusive", None)
 
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
         if nodes == '':
             nodes = None
         if nodes is not None and nodes != '':  # Have to account for empty string!
@@ -416,11 +421,16 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             LOGGER.error(msg)
             raise ValueError(msg)
 
-        # Handle the exclusive flags, updating batch block settings (default)
-        # with what's set in the step, if any given
-        step_exclusive = step.run.get("exclusive", None)
-
-        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+        # Modify jobspec if exclusive to exclude procs/cores/gpus keys
+        # TODO: sort out confusing mixing of per task specs here and jobspec
+        #       creation calls using per slot specs...
+        # TODO: refactor into shared resource modification between this and
+        #       write_script/parallelize
+        if nodes and step_exclusive['allocation']:
+            # Should we do this here or inside submit?
+            processors = nodes  # one slot per node
+            cores_per_task = 1  # cores per slot >= 1 in python api
+            # filter out ngpus_per_slot inside submit
 
         # Unpack waitable flag and pass it along if there: only pass it along if
         # it's in the step maybe, leaving each adapter to retain their defaults?

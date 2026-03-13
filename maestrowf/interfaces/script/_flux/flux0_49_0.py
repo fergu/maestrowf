@@ -322,11 +322,11 @@ class FluxInterface_0490(FluxInterface):
                 # Need to attach broker opts to the constructor?
                 # TODO: Add in extra broker options if not null
                 # ngpus_per_slot = int(ceil(ngpus / nodes))
-                if nodes:
+                if nodes and not exclusive:
                     ngpus_per_slot = int(ceil(ngpus / nodes))
                 else:
                     ngpus_per_slot = None
-                LOGGER.warn(f"NODES recieved: {nodes}")
+
                 jobspec = flux.job.JobspecV1.from_nest_command(
                     [path],
                     num_nodes=nodes,
