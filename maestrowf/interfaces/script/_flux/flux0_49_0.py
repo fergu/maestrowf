@@ -423,7 +423,7 @@ class FluxInterface_0490(FluxInterface):
     @classmethod
     def parallelize(cls, procs, nodes=None, launcher_args=None, **kwargs):
 
-        args = ["flux", "run"]  #, "-n", str(procs)]
+        args = ["flux", "run"]
         
         exclusive = kwargs.pop('exclusive', False)
         
@@ -431,9 +431,6 @@ class FluxInterface_0490(FluxInterface):
         if nodes is not None and nodes != '':
             args.append("-N")
             args.append(str(nodes))
-        # ntasks = nodes if nodes else 1
-        # args.append("-N")
-        # args.append(str(ntasks))
 
         # NOTE: should we raise an exception here instead of just logging the error?
         #       better pre-run validation might be more useful...
@@ -452,17 +449,11 @@ class FluxInterface_0490(FluxInterface):
         
         if cores_per_task is not None and cores_per_task != '' and not exclusive:
             args.append("-c")
-            # Error checking -> more comprehensive handling in base schedulerscriptadapter?
-            # if not kwargs["cores per task"]:
-            #     cores_per_task = 1
-            # else:
-            #     cores_per_task = kwargs["cores per task"]
-
-            # args.append(str(kwargs["cores per task"]))
+            # TODO: more comprehensive handling in base schedulerscriptadapter?
             args.append(str(cores_per_task))
 
             LOGGER.info("Adding 'cores per task' %s to flux args",
-                        str(kwargs["cores per task"]))
+                        str(cores_per_task))
 
         ngpus = kwargs.get("gpus", 0)
         if ngpus and ngpus != '' and not exclusive:

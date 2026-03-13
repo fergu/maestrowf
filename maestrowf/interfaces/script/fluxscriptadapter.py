@@ -95,7 +95,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         # NOTE: Host doesn"t seem to matter for FLUX. sbatch assumes that the
         # current host is where submission occurs.
-        # self.add_batch_parameter("nodes", kwargs.pop("nodes", "1"))
         self._allocation_args = kwargs.get("allocation_args", {})
         LOGGER.info(f"Allocation args: {self._allocation_args}")
         self._launcher_args = kwargs.get("launcher_args", {})
@@ -270,9 +269,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
 
         nodes = run.get("nodes", None)
-        LOGGER.info("Retrived 'nodes' from the step: '%s'", nodes)
-        print(f"INFO: retrieved 'nodes' from step: '{nodes}'")
-        if nodes is not None and nodes != '':  # catch nodes = 0 here?
+        if nodes and nodes is not None and nodes != '':
             batch_header["nodes"] = run.pop("nodes")
 
         # Abusing 'truthiness' here to catch '' values too
@@ -331,9 +328,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: A string of the parallelize command configured using nodes
                   and procs.
         """
-        # nodes = nodes
-        # ntasks = nodes if nodes else self._batch.get("nodes", 1)
-        
         # Handle the exclusive flags, updating batch block settings (default)
         # with what's set in the step, if any given
         step_exclusive = kwargs.pop("exclusive", None)
@@ -368,22 +362,23 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         step_exclusive = step.run.get("exclusive", None)
 
         step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+
+        # TODO: track this down and normalize this upstream for all adapters
         if nodes == '':
             nodes = None
-        if nodes is not None and nodes != '':  # Have to account for empty string!
-            nodes = int(nodes)
-        # if not isinstance(nodes, int):
-        #     if not nodes:
-        #         nodes = 1
-        #     else:
-        #         nodes = int(nodes)
 
+        if nodes is not None and not isinstance(nodes, int):
+            nodes = int(nodes)
+
+        # TODO: revist this after tracking down '' behavior seen with nodes
         if not isinstance(processors, int):
             if not processors:
-                processors = 1
+                processors = 1  # python api requires >= 1 for procs/tasks
             else:
                 processors = int(processors)
 
+
+            
         force_broker = step.run.get("nested", True)
         walltime = \
             self._convert_walltime_to_seconds(step.run.get("walltime", 0))
@@ -398,7 +393,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             except:
                 cores_per_task = 1
         if not cores_per_task:
-            cores_per_task = 1 # max((1, ceil(processors / nodes)))
+            cores_per_task = 1  # flux python api defaults to 1
             LOGGER.warn(
                 "'cores per task' set to a non-value. Populating with a "
                 "sensible default. (cores per task = %d", cores_per_task)
@@ -408,6 +403,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             ngpus = step.run.get("gpus", "0")
             ngpus = int(ngpus) if ngpus else 0
         except ValueError as val_error:
+            # TODO: normalize this upstream for all adapters
             msg = f"Specified gpus '{ngpus}' is not a decimal value."
             LOGGER.error(msg)
             raise val_error
