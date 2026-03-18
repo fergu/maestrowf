@@ -436,7 +436,7 @@ def test_flux_resource_configs(
     for step_name, step_record in ex_graph.values.items():
         if step_name == "_source":
             continue
-        
+
         ex_graph._execute_record(step_record, adapter)
         pprint("Step name:")
         pprint(step_name)
@@ -453,27 +453,30 @@ def test_flux_resource_configs(
                 # Cancel the job; we just need jobspecs, not completion
                 c_record = adapter.cancel_jobs([jobid])
 
-
                 # Get the keys to ignore
                 step_ignore_keys = ignore_jobspec_keys[step_name]
-                direct_ignore_defaults = ["tasks.0.command.3"] # 
+                direct_ignore_defaults = [
+                    "tasks.0.command.3"
+                ]
                 direct_ignore_keys = step_ignore_keys + direct_ignore_defaults
 
                 flux_jobspec_check(jobid,
                                    expected_jobspec_keys[step_name],
                                    source_label='mark.parametrized jobspec',
-                                   ignore_keys=set(direct_ignore_keys), #{"tasks.0.command.3"},
+                                   ignore_keys=set(direct_ignore_keys),
                                    debug=False)
 
                 # Add a second test to ensure it matches written scripts' jobspec
                 script_jobspec = generate_jobspec_from_script(step_record.script)
 
-                script_ignore_defaults = ["tasks.0.command.3",  # script/cmd obtained via different methods between two modes
-                                          "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
-                                          # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
-                                          "attributes.system.cwd",  # Irrelevant difference
-                                          "attributes.system.shell.options.rlimit",  # Not populated via python?
-                                          "attributes.system.files.script"]  # Attached to cmd in python?
+                script_ignore_defaults = [
+                    "tasks.0.command.3",  # script/cmd obtained via different methods between two modes
+                    "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
+                    # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
+                    "attributes.system.cwd",  # Irrelevant difference
+                    "attributes.system.shell.options.rlimit",  # Not populated via python?
+                    "attributes.system.files.script"  # Attached to cmd in python?
+                ]
 
                 script_ignore_keys = script_ignore_defaults + step_ignore_keys
 
@@ -481,12 +484,4 @@ def test_flux_resource_configs(
                                    script_jobspec,
                                    source_label='script jobspec',
                                    ignore_keys=set(script_ignore_keys),
-                                   # ignore_keys={
-                                   #     "tasks.0.command.3",  # script/cmd obtained via different methods between two modes
-                                   #     "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
-                                   #     # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
-                                   #     "attributes.system.cwd",  # Irrelevant difference
-                                   #     "attributes.system.shell.options.rlimit",  # Not populated via python?
-                                   #     "attributes.system.files.script",  # Attached to cmd in python?
-                                   # },
                                    debug=False)
