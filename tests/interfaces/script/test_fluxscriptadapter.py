@@ -202,7 +202,7 @@ def test_flux_job_opts(
         variant_spec_path,
         load_study,
         flux_jobspec_check,
-        tmp_path,               # Pytest tmp dir fixture: Path()):
+        tmp_path,               # Pytest tmp dir fixture: Path
         generate_jobspec_from_script,
 ):
     spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
@@ -408,7 +408,7 @@ def test_flux_resource_configs(
         variant_spec_path,
         load_study,
         flux_jobspec_check,
-        tmp_path,               # Pytest tmp dir fixture: Path()):
+        tmp_path,               # Pytest tmp dir fixture: Path
         generate_jobspec_from_script,
         capsys
 ):
