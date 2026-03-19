@@ -95,7 +95,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         # NOTE: Host doesn"t seem to matter for FLUX. sbatch assumes that the
         # current host is where submission occurs.
-        self.add_batch_parameter("nodes", kwargs.pop("nodes", "1"))
         self._allocation_args = kwargs.get("allocation_args", {})
         LOGGER.info(f"Allocation args: {self._allocation_args}")
         self._launcher_args = kwargs.get("launcher_args", {})
@@ -264,9 +263,23 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         batch_header["walltime"] = \
             str(self._convert_walltime_to_seconds(walltime))
 
-        if run["nodes"]:
+        # Unpack exclusive to modify procs/core per task
+        step_exclusive = step.run.get("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+
+        nodes = run.get("nodes", None)
+        if nodes and nodes is not None and nodes != '':
             batch_header["nodes"] = run.pop("nodes")
-        if run["procs"]:
+
+        # Abusing 'truthiness' here to catch '' values too
+        elif not nodes and step_exclusive['allocation']:
+            LOGGER.error(
+                "Invalid use of exclusive on allocation: "
+                "exclusive can only be set with a node count"
+            )
+
+        if run["procs"] and not step_exclusive['allocation']:
             batch_header["procs"] = run.pop("procs")
         batch_header["job-name"] = step.name.replace(" ", "_")
         batch_header["comment"] = step.description.replace("\n", " ")
@@ -278,12 +291,11 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         modified_header = ["#!{}".format(self._exec)]
 
-        # Process INFO lines at the start to 
-        # lines starting tag+prefix (e.g. "#flux:" ) that doesn't match the flux directives
+        # Process INFO lines at the start to avoid interrupting flux directives
         for key, value in self._header_info.items():
             modified_header.append(value.format(**batch_header))
 
-        # Inject a blank # comment line between the flux directives for readability
+        # Inject a blank # comment line between the info/flux directives for readability
         modified_header.append("#")
 
         for key, value in self._header.items():
@@ -293,13 +305,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
             modified_header.append(value.format(**batch_header))
 
-        # Handle exclusive flag
-        # Handle the exclusive flags, updating batch block settings (default)
-        # with what's set in the step, if any given
-        step_exclusive = step.run.get("exclusive", None)
-
-        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
-
+        # Add exclusive flag to header if requested
         if step_exclusive['allocation']:
             modified_header.append(f"{self._flux_directive}" + "--exclusive")
 
@@ -322,8 +328,6 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: A string of the parallelize command configured using nodes
                   and procs.
         """
-        ntasks = nodes if nodes else self._batch.get("nodes", 1)
-        
         # Handle the exclusive flags, updating batch block settings (default)
         # with what's set in the step, if any given
         step_exclusive = kwargs.pop("exclusive", None)
@@ -334,7 +338,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         kwargs['exclusive'] = step_exclusive['launcher']
 
         return self._interface.parallelize(
-            procs, nodes=ntasks, addtl_args=self._addl_args,
+            procs, nodes=nodes, addtl_args=self._addl_args,
             launcher_args=self._launcher_args, **kwargs)
 
     def submit(self, step, path, cwd, job_map=None, env=None):
@@ -350,21 +354,31 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: The return status of the submission command and job
                   identiifer.
         """
-        nodes = step.run.get("nodes", 1)
-        processors = step.run.get("procs", 0)
+        nodes = step.run.get("nodes", None)
+        processors = step.run.get("procs", 1)
+        
+        # Handle the exclusive flags, updating batch block settings (default)
+        # with what's set in the step, if any given
+        step_exclusive = step.run.get("exclusive", None)
 
-        if not isinstance(nodes, int):
-            if not nodes:
-                nodes = 1
-            else:
-                nodes = int(nodes)
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
 
+        # TODO: track this down and normalize this upstream for all adapters
+        if nodes == '':
+            nodes = None
+
+        if nodes is not None and not isinstance(nodes, int):
+            nodes = int(nodes)
+
+        # TODO: revist this after tracking down '' behavior seen with nodes
         if not isinstance(processors, int):
             if not processors:
-                processors = 1
+                processors = 1  # python api requires >= 1 for procs/tasks
             else:
                 processors = int(processors)
 
+
+            
         force_broker = step.run.get("nested", True)
         walltime = \
             self._convert_walltime_to_seconds(step.run.get("walltime", 0))
@@ -379,7 +393,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             except:
                 cores_per_task = 1
         if not cores_per_task:
-            cores_per_task = 1 # max((1, ceil(processors / nodes)))
+            cores_per_task = 1  # flux python api defaults to 1
             LOGGER.warn(
                 "'cores per task' set to a non-value. Populating with a "
                 "sensible default. (cores per task = %d", cores_per_task)
@@ -389,12 +403,13 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             ngpus = step.run.get("gpus", "0")
             ngpus = int(ngpus) if ngpus else 0
         except ValueError as val_error:
+            # TODO: normalize this upstream for all adapters
             msg = f"Specified gpus '{ngpus}' is not a decimal value."
             LOGGER.error(msg)
             raise val_error
 
         # Calculate nprocs
-        ncores = cores_per_task * nodes
+        ncores = cores_per_task * processors  # What was this check doing?
         # Raise an exception if ncores is 0
         if ncores <= 0:
             msg = "Invalid number of cores specified. " \
@@ -402,11 +417,16 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             LOGGER.error(msg)
             raise ValueError(msg)
 
-        # Handle the exclusive flags, updating batch block settings (default)
-        # with what's set in the step, if any given
-        step_exclusive = step.run.get("exclusive", None)
-
-        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+        # Modify jobspec if exclusive to exclude procs/cores/gpus keys
+        # TODO: sort out confusing mixing of per task specs here and jobspec
+        #       creation calls using per slot specs...
+        # TODO: refactor into shared resource modification between this and
+        #       write_script/parallelize
+        if nodes and step_exclusive['allocation']:
+            # Should we do this here or inside submit?
+            processors = nodes  # one slot per node
+            cores_per_task = 1  # cores per slot >= 1 in python api
+            # filter out ngpus_per_slot inside submit
 
         # Unpack waitable flag and pass it along if there: only pass it along if
         # it's in the step maybe, leaving each adapter to retain their defaults?
@@ -428,9 +448,8 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
                 nodes, processors, cores_per_task, path, cwd, walltime, ngpus,
                 job_name=step.name, force_broker=force_broker, urgency=urgency,
                 waitable=waitable, queue=queue, bank=bank,
-                addtl_batch_args=packed_alloc_args, #self.pack_addtl_batch_args(),
+                addtl_batch_args=packed_alloc_args,
                 exclusive=step_exclusive['allocation'],
-                
             )
 
         return SubmissionRecord(submit_status, retcode, jobid)

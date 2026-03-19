@@ -3,7 +3,6 @@
 #MAESTRO-INFO (flux version) 0.78.0
 #
 #flux: -N 1
-#flux: -n 1
 #flux: -t 60.0s
 #flux: -q pdebug
 #flux: --bank=guests
@@ -16,5 +15,5 @@
 #flux: --setopt=bar=42
 #flux: --conf=resource.rediscover=true
 
-flux run -n 1 -N 1 -c 1 --exclusive --setopt=fastload echo "Hello, Pam!" > Hello_Pam.txt
-flux run -n 1 -N 1 -c 1 --exclusive --setopt=fastload sleep 1
+flux run -N 1 -n 1 --exclusive --setopt=fastload echo "Hello, Pam!" > Hello_Pam.txt
+flux run -N 1 -n 1 --exclusive --setopt=fastload sleep 1

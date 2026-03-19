@@ -9,27 +9,27 @@ steps:
 <!-- There a way to add a title to a table? -->
 **Batch block keys**
 
-|  **Key**      | **Required?**  | **Type** | **Description** |
-|    :-         |      :-:       |    :-:   |       :-        |
-|  `type`       |      Yes        |   str    | Select scheduler adapter to use.  Currently supported are: {`local`, `slurm`, `lsf`, `flux`} |
-|  `shell`      |      No        |   str    | Optional specification path to shell to use for execution.  Defaults to `"/bin/bash"` |
-| `bank` (1)        |      Yes       |   str    | Account which runs the job; this is used for computing job priority on the cluster. '--account' on slurm, '-G' on lsf, ...|
-| `host`        |      Yes       |   str    | The name of the cluster to execute this study on |
-| `queue` (2)       |      Yes       |   str    | Scheduler queue/machine partition to submit jobs (study steps) to |
-| `nodes`       |      No        |   int    | Number of compute nodes to be reserved for jobs: note this is also a per step key |
-| `reservation` |      No        |   str    | Optional prereserved allocation/partition to submit jobs to |
-| `qos`         |      No        |   str    | Quality of service specification -> i.e. run in standby mode to use idle resources when user priority is low/job limits already reached |
-| `gpus`        |      No        |   str    | Optional reservation of gpu resources for jobs |
-| `procs`       |      No        |   int    | Optional number of tasks in batch allocations: note this is also a per step key |
-| `flux_uri`    |      Yes*      |   str    | URI of the Flux instance to schedule jobs to. * Only used with `type`=`flux`. NOTE: It is recommended to rely on environment variables instead, as URIs are very ephemeral and may change frequently.|
-| `version`     |      No        |   str    | Optional version of flux scheduler; for accommodating api changes |
-| :warning: `args`        |      No        |   dict   | Optional additional args to pass to scheduler; keys are arg names, values are arg values |
-| `allocation_args` | No  | dict | Optional scheduler specific options/flags to add to allocations :material-information-slab-circle: flux only in :material-tag:`1.1.12` |
-| `launcher_args` | No  | dict | Optional scheduler specific options/flags to add to launcher commands :material-information-slab-circle: flux only in :material-tag:`1.1.12` |
+| **Key**           | **Required?** | **Type** | **Description**                                                                                                                                                                                       |
+|:------------------|:-------------:|:--------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `type`            | Yes           | str      | Select scheduler adapter to use.  Currently supported are: {`local`, `slurm`, `lsf`, `flux`}                                                                                                          |
+| `shell`           | No            | str      | Optional specification path to shell to use for execution.  Defaults to `"/bin/bash"`                                                                                                                 |
+| `bank` (1)        | Yes           | str      | Account which runs the job; this is used for computing job priority on the cluster. '--account' on slurm, '-G' on lsf, ...                                                                            |
+| `host`            | Yes           | str      | The name of the cluster to execute this study on                                                                                                                                                      |
+| `queue` (2)       | Yes           | str      | Scheduler queue/machine partition to submit jobs (study steps) to                                                                                                                                     |
+| `nodes`           | No            | int      | Number of compute nodes to be reserved for jobs: note this is also a per step key                                                                                                                     |
+| `reservation`     | No            | str      | Optional prereserved allocation/partition to submit jobs to                                                                                                                                           |
+| `qos`             | No            | str      | Quality of service specification -> i.e. run in standby mode to use idle resources when user priority is low/job limits already reached                                                               |
+| `gpus`            | No            | str      | Optional reservation of gpu resources for jobs                                                                                                                                                        |
+| `procs`           | No            | int      | Optional number of tasks in batch allocations: note this is also a per step key                                                                                                                       |
+| `flux_uri`        | Yes*          | str      | URI of the Flux instance to schedule jobs to. * Only used with `type`=`flux`. NOTE: It is recommended to rely on environment variables instead, as URIs are very ephemeral and may change frequently. |
+| `version`         | No            | str      | Optional version of flux scheduler; for accommodating api changes                                                                                                                                     |
+| :warning: `args`  | No            | dict     | Optional additional args to pass to scheduler; keys are arg names, values are arg values                                                                                                              |
+| `allocation_args` | No            | dict     | Optional scheduler specific options/flags to add to allocations :material-information-slab-circle: flux only in :material-tag:`1.2.0`                                                                |
+| `launcher_args`   | No            | dict     | Optional scheduler specific options/flags to add to launcher commands :material-information-slab-circle: flux only in :material-tag:`1.2.0`                                                          |
 
 !!! warning "`args` deprecated"
 
-    `args` has been marked deprecated in :material-tag: `1.1.12` in favor of the more flexible `allocation_args` and `launcher_args`
+    `args` has been marked deprecated in :material-tag: `1.2.0` in favor of the more flexible `allocation_args` and `launcher_args`
 
 The information in this block is used to populate the step specific batch scripts with the appropriate
 header comment blocks (e.g. '#SBATCH --partition' for slurm).  Additional keys such as step specific
@@ -47,19 +47,19 @@ run locally unless at least the ``nodes`` or ``procs`` key in the step is popula
 ### Extra Arguments
 ---
 
-There are new groups in the batch block in :material-tag:`1.1.12` that facilitate adding custom options to both allocations and the `$(LAUNCHER)` invocations independently.  These are grouped into two dictionaries in the batch block which are meant to enable passing in options that Maestro cannot abstract across schedulers more generally:
+There are new groups in the batch block in :material-tag:`1.2.0` that facilitate adding custom options to both allocations and the `$(LAUNCHER)` invocations independently.  These are grouped into two dictionaries in the batch block which are meant to enable passing in options that Maestro cannot abstract across schedulers more generally:
 
 * `allocation_args` for the allocation target (batch directives such as `#Flux: --setopt=foo=bar`)
 * `launcher_args` for the `$(LAUNCHER)` target (`flux run --setopt=foo=bar`)
 
 These are ~structured mappings which are designed to mimic cli and batch script directive syntax for intuitive mapping from raw scheduler usage to Maestro.  Each of these dictionaries' keys correspond to a scheduler specific CLI argument/option or flag.  The serialization rules are as follows, with specific examples here shown for the initial implementation in the flux adapter (other schedulers will yield prefix/separator rules specific to their implementation):
 
-|  **Key Type**         | **Prefix** | **Separator** | **Example YAML**     | **Example CLI Input/Directive** |
-|    :-                 | :-            | :-       |    :-                |       :-               |
-|  Single letter        |  `-`           | `" "` (space) | <pre><code><span>o:</span></br><span>  bar: 42</span></code></pre>       | `-o bar=42`            |
-|  Multi-letter         | `--`           |  `=`          | <pre><code><span>setopt:</span></br><span>  foo: bar</span></code></pre> | `--setopt=foo=bar`     |
-|  Boolean flag w/key   | as above       | as above      | <pre><code><span>setopt:</span></br><span>  foobar: #</span></code></pre> | `--setopt=foobar`      |
-|  Boolean flag w/o key | as above       | as above      | `exclusive: #`        | `--exclusive`      |
+| **Key Type**         | **Prefix** | **Separator** | **Example YAML**                                                          | **Example CLI Input/Directive** |
+|:---------------------|:-----------|:--------------|:--------------------------------------------------------------------------|:--------------------------------|
+| Single letter        | `-`        | `" "` (space) | <pre><code><span>o:</span></br><span>  bar: 42</span></code></pre>        | `-o bar=42`                     |
+| Multi-letter         | `--`       | `=`           | <pre><code><span>setopt:</span></br><span>  foo: bar</span></code></pre>  | `--setopt=foo=bar`              |
+| Boolean flag w/key   | as above   | as above      | <pre><code><span>setopt:</span></br><span>  foobar: #</span></code></pre> | `--setopt=foobar`               |
+| Boolean flag w/o key | as above   | as above      | `exclusive: #`                                                            | `--exclusive`                   |
 
 !!! note "Boolean/Flag type arguments"
 
@@ -216,7 +216,7 @@ See the [flux framework](https://flux-framework.readthedocs.io/en/latest/index.h
 ### Extra Flux Args
 ----
 
-As of :material-tag:`1.1.12`, the flux adapter takes advantage of new argument pass through for scheduler options that Maestro cannot abstract away.  This is done via `allocation_args` and `launcher_args` in the batch block, which expand upon the previous `args` input which only applied to `$(LAUNCHER)`.  There are some caveat's here due to the way Maestro talks to flux.  The current flux adapters all use the python api's from Flux to build the batch jobs, with the serialized batch script being serialized separately instead of submitted directly as with the other schedulers.  A consequence of this is the `allocation_args` map to specific call points on that python api, and thus the option pass through is not quite arbitrary.  There are 4 currently supported options for allocations which cover a majority of usecases (open an issue and let us know if there is a usecase you need that is not covered!):
+As of :material-tag:`1.2.0`, the flux adapter takes advantage of new argument pass through for scheduler options that Maestro cannot abstract away.  This is done via `allocation_args` and `launcher_args` in the batch block, which expand upon the previous `args` input which only applied to `$(LAUNCHER)`.  There are some caveat's here due to the way Maestro talks to flux.  The current flux adapters all use the python api's from Flux to build the batch jobs, with the serialized batch script being serialized separately instead of submitted directly as with the other schedulers.  A consequence of this is the `allocation_args` map to specific call points on that python api, and thus the option pass through is not quite arbitrary.  There are 4 currently supported options for allocations which cover a majority of usecases (open an issue and let us know if there is a usecase you need that is not covered!):
 
 * shell options: `-o/--setopt` prefixed arguments
 * attributes: `-S/--setattr` prefixed arguments

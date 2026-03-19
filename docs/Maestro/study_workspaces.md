@@ -135,7 +135,7 @@ Some concerns to be mindful of here is that you may want to prevent the yaml rea
 
 Currently the only two ways to control step workspace names are via the string typing control of floats described above, and a cli argument to the `maestro run` command: `--hashws`.  Hashing can be a critical option in certain studies; large numbers of parameters, parameters that may be specifying paths or other long strings, or string representations of floating point numbers that require full 17+ digits can all lead to exceeding the system path and/or name length limits.  Hashing is an option to mitigate this.  However, going forward the new sortable algorithm should prove more desirable for it's improved readability and compactness in all cases.
 
-#### MD5 algorithm (pre-:material-tag:`1.1.12`)
+#### MD5 algorithm (pre-:material-tag:`1.2.0`)
 
 Initial implementation simply ran the string form of the steps' parameter combination through the md5 hashing algorithm.  While this guarantees uniqueness, and does a good job limiting the size of the resulting paths, it is not very human friendly:
 
@@ -152,7 +152,7 @@ Initial implementation simply ran the string form of the steps' parameter combin
 ![Workspaces Demo Study Layout With MD5 Step Hashing](../assets/images/examples/workspaces/md5_hashed_study_workspace.svg)
 
 
-#### Sortable Hash (>=:material-tag:`1.1.12`)
+#### Sortable Hash (>=:material-tag:`1.2.0`)
 
 In Maestro >:material-tag:`1.1.11`, the md5 algorithm is replaced with an alternative that's more human readable, maintaining compactness, but also introducting sortable naming.  Technically this is not a hash function as it cannot be applied to parameter combination strings independently, rather requiring knowledge of all instances of a step to apply a count based identifier.  The format of this is as follows:
 

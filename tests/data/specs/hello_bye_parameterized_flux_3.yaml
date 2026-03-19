@@ -16,7 +16,7 @@ batch:
         gpumode: CPX
       conf:
         resource:
-          rediscover: "true" # Flux wants 'true', not 'True' that python bool serializes to
+          rediscover: "true" 
         
     launcher_args:
       setopt:
@@ -38,6 +38,7 @@ study:
           cmd: |
             $(LAUNCHER) echo "$(GREETING), $(NAME)!" > $(OUT_FORMAT)
             $(LAUNCHER) sleep 1
+          nodes: 1
           procs: 1
           nested: True
           exclusive: True       # Testing mixed batch/step
@@ -49,6 +50,7 @@ study:
           cmd: |
             $(LAUNCHER) echo "Bye, World!" > bye.txt
             $(LAUNCHER) sleep 1
+          nodes: 1
           procs: 1
           nested: True
           exclusive:         # Test overriding launcher from batch block

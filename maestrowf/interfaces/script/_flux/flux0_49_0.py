@@ -321,7 +321,12 @@ class FluxInterface_0490(FluxInterface):
                 )
                 # Need to attach broker opts to the constructor?
                 # TODO: Add in extra broker options if not null
-                ngpus_per_slot = int(ceil(ngpus / nodes))
+                # ngpus_per_slot = int(ceil(ngpus / nodes))
+                if nodes and not exclusive:
+                    ngpus_per_slot = int(ceil(ngpus / nodes))
+                else:
+                    ngpus_per_slot = None
+
                 jobspec = flux.job.JobspecV1.from_nest_command(
                     [path],
                     num_nodes=nodes,
@@ -418,29 +423,40 @@ class FluxInterface_0490(FluxInterface):
     @classmethod
     def parallelize(cls, procs, nodes=None, launcher_args=None, **kwargs):
 
-        args = ["flux", "run", "-n", str(procs)]
-
+        args = ["flux", "run"]
+        
+        exclusive = kwargs.pop('exclusive', False)
+        
         # if we've specified nodes, add that to wreckrun
-        ntasks = nodes if nodes else 1
-        args.append("-N")
-        args.append(str(ntasks))
+        if nodes is not None and nodes != '':
+            args.append("-N")
+            args.append(str(nodes))
 
-        if "cores per task" in kwargs:
+        # NOTE: should we raise an exception here instead of just logging the error?
+        #       better pre-run validation might be more useful...
+        #       or should we just prune the exclusive flag and run it anyway?
+        if procs and (nodes is None or nodes == '') and exclusive:
+            LOGGER.error(
+                "Invalid use of exclusive on launcher: "
+                "exclusive can only be set with a node count"
+            )
+
+        if procs:
+            args.append("-n")
+            args.append(str(procs))
+
+        cores_per_task = kwargs.get("cores per task", None)
+        
+        if cores_per_task is not None and cores_per_task != '' and not exclusive:
             args.append("-c")
-            # Error checking -> more comprehensive handling in base schedulerscriptadapter?
-            if not kwargs["cores per task"]:
-                cores_per_task = 1
-            else:
-                cores_per_task = kwargs["cores per task"]
-
-            # args.append(str(kwargs["cores per task"]))
+            # TODO: more comprehensive handling in base schedulerscriptadapter?
             args.append(str(cores_per_task))
 
             LOGGER.info("Adding 'cores per task' %s to flux args",
-                        str(kwargs["cores per task"]))
+                        str(cores_per_task))
 
         ngpus = kwargs.get("gpus", 0)
-        if ngpus:
+        if ngpus and ngpus != '' and not exclusive:
             gpus = str(ngpus)
             args.append("-g")
             args.append(gpus)
@@ -451,8 +467,6 @@ class FluxInterface_0490(FluxInterface):
             launcher_args = {}
 
         # Look for optional exclusive flag
-        exclusive = kwargs.pop('exclusive', False)
-
         addtl = []
         LOGGER.info("Processing 'exclusive': %s", exclusive)
         if exclusive:
@@ -461,7 +475,7 @@ class FluxInterface_0490(FluxInterface):
         addtl_args = kwargs.get("addtl_args", {})
         if addtl_args and launcher_args:
             # TODO: better way to mark things deprecated that's not buried?
-            LOGGER.warn("'args' input is deprecated in v1.1.12.  Use the more "
+            LOGGER.warn("'args' input is deprecated in v1.2.  Use the more "
                         "flexible 'launcher_args' going forward. Combining.")
         if 'o' in launcher_args:
             launcher_args['o'].update(**addtl_args)

@@ -2,7 +2,6 @@
 #MAESTRO-INFO (flux adapter version) 0.49.0
 #MAESTRO-INFO (flux version) 0.78.0
 #
-#flux: -N 1
 #flux: -n 1
 #flux: -t 60.0s
 #flux: -q pdebug
@@ -15,5 +14,5 @@
 #flux: --setopt=bar=42
 #flux: --conf=resource.rediscover=true
 
-flux run -n 1 -N 1 -c 1 --setopt=fastload echo "Bye, World!" > bye.txt
-flux run -n 1 -N 1 -c 1 --setopt=fastload sleep 1
+flux run -n 1 --setopt=fastload echo "Bye, World!" > bye.txt
+flux run -n 1 --setopt=fastload sleep 1
