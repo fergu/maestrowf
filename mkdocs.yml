@@ -93,6 +93,7 @@ nav:
             - Specification 1.0: 'Maestro/specification.md'
             - Scheduling Studies: 'Maestro/scheduling.md'
         - Specifying Study Parameters: 'Maestro/parameter_specification.md'
+        - Study Workspaces: 'Maestro/study_workspaces.md'
         - How-to Guides:
             - 'Maestro/how_to_guides/index.md'
             - 'Maestro/how_to_guides/timeouts.md'

@@ -34,8 +34,17 @@ This was created to verify existing functionality of the ScriptAdapterFactory
 as it was converted to dynamically load all ScriptAdapters using a namespace
 plugin methodology.
 """
+import re
+
 from maestrowf.interfaces.script.fluxscriptadapter import FluxScriptAdapter
 from maestrowf.interfaces import ScriptAdapterFactory
+
+from maestrowf.datastructures.core import Study
+from maestrowf.datastructures.core.executiongraph import ExecutionGraph
+from maestrowf.specification import YAMLSpecification
+
+from rich.pretty import pprint
+import pytest
 
 
 def test_flux_adapter():
@@ -44,7 +53,7 @@ def test_flux_adapter():
     this is validate that existing specifications do not break.
     :return:
     """
-    assert(FluxScriptAdapter.key == 'flux')
+    assert FluxScriptAdapter.key == 'flux'
 
 
 def test_flux_adapter_in_factory():
@@ -55,10 +64,424 @@ def test_flux_adapter_in_factory():
     """
     saf = ScriptAdapterFactory
     # Make sure FluxScriptAdapter is in the facotries object
-    assert(saf.factories[FluxScriptAdapter.key] == FluxScriptAdapter)
+    assert saf.factories[FluxScriptAdapter.key] == FluxScriptAdapter
     # Make sure the FluxScriptAdapter key is in the valid adapters
-    assert(FluxScriptAdapter.key in ScriptAdapterFactory.get_valid_adapters())
+    assert FluxScriptAdapter.key in ScriptAdapterFactory.get_valid_adapters()
     # Make sure that get_adapter returns the FluxScriptAdapter when asking
     # for it by key
-    assert(ScriptAdapterFactory.get_adapter(FluxScriptAdapter.key) ==
+    assert (ScriptAdapterFactory.get_adapter(FluxScriptAdapter.key) ==
            FluxScriptAdapter)
+
+
+@pytest.mark.sched_flux         # This one needs to at least import flux to work
+@pytest.mark.parametrize(
+    "spec_file, variant_id, expected_batch_files",
+    [
+        (
+            "hello_bye_parameterized_flux",
+            1,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.hello_world_GREETING.Hello.NAME.Pam.flux.sh.1",
+                "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.1"
+            }
+        ),
+        (
+            "hello_bye_parameterized_flux",
+            3,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.hello_world_GREETING.Hello.NAME.Pam.flux.sh.3",
+                "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.3"
+            }
+        ),
+        (                       # Group to test unknown alloc arg filtering
+            "hello_bye_parameterized_flux",
+            4,
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.hello_world_GREETING.Hello.NAME.Pam.flux.sh.4",
+                "bye_world_GREETING.Hello.NAME.Pam": "hello_bye_parameterized_flux.bye_world_GREETING.Hello.NAME.Pam.flux.sh.4"
+            }
+        ),
+    ]
+)
+def test_flux_script_serialization(
+        spec_file,
+        variant_id,
+        expected_batch_files,
+        variant_spec_path,
+        load_study,
+        variant_expected_output,
+        text_diff,
+        tmp_path                # Pytest tmp dir fixture: Path()):
+):
+    spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
+    # pprint(spec_path)
+    yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
+
+    study: Study = load_study(spec_path, tmp_path, dry_run=True)
+
+    pkl_path: str
+    ex_graph: ExecutionGraph
+    pkl_path, ex_graph = study.stage()
+    ex_graph.set_adapter(yaml_spec.batch)
+
+    adapter = ScriptAdapterFactory.get_adapter(yaml_spec.batch["type"])
+    pprint(f"Adapter args: {ex_graph._adapter}")
+    adapter = adapter(**ex_graph._adapter)
+
+    # Setup a diff ignore pattern to filter out the #INFO (flux version ...
+    ignore_patterns = [
+        re.compile(r'#MAESTRO-INFO \(flux version\)')
+    ]
+
+    # Loop over the steps and execute them
+    for step_name, step_record in ex_graph.values.items():
+        if step_name == "_source":
+            continue
+        pprint(f"Step name: {step_name}")
+        ex_graph._execute_record(step_record, adapter)
+
+        with open(step_record.script, "r") as written_script_file:
+            written_script = written_script_file.read()
+
+        assert step_name in expected_batch_files
+
+        with open(variant_expected_output(expected_batch_files[step_name]), 'r') as ebf:
+            expected_script = ebf.read()
+
+        assert text_diff(written_script, expected_script, ignore_patterns=ignore_patterns)
+
+
+
+@pytest.mark.sched_flux         # This one needs to at least import flux to work
+@pytest.mark.parametrize(
+    "spec_file, variant_id, expected_jobspec_keys",
+    [
+        (
+            "hello_bye_parameterized_flux",
+            2,                  # Use the invalid queue one to avoid waiting for jobs to run
+            {   # NOTE: should we contsruct this, and just use study + step_id + sched.sh.variant_id?
+                "hello_world_GREETING.Hello.NAME.Pam": {
+                    'resources': [{'exclusive': True}],
+                    'attributes': {
+                        'system': {
+                            'shell': {
+                                'options': {'bar': 42, 'foo': 'bar'},
+                            },
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                            'files': {
+                                'conf.json': {'data': {'resource': {'rediscover': True, "noverify": True}}}
+                            },
+                            'gpumode': 'CPX'
+                        }
+                    }
+                },
+                "bye_world_GREETING.Hello.NAME.Pam": {
+                    'attributes': {
+                        'system': {
+                            'shell': {
+                                'options': {'bar': 42, 'foo': 'bar'},
+                            },
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                            'files': {
+                                'conf.json': {'data': {'resource': {'rediscover': True, "noverify": True}}}
+                            },
+                            'gpumode': 'CPX'
+                        }
+                    }
+                },
+            }
+        ),
+    ]
+)
+def test_flux_job_opts(
+        spec_file,
+        variant_id,
+        expected_jobspec_keys,
+        variant_spec_path,
+        load_study,
+        flux_jobspec_check,
+        tmp_path,               # Pytest tmp dir fixture: Path
+        generate_jobspec_from_script,
+):
+    spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
+    pprint(spec_path)
+    yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
+
+    print(f"{tmp_path=}")
+    study: Study = load_study(spec_path, tmp_path, dry_run=False)
+    print(f"{study.output_path=}")
+    pkl_path: str
+    ex_graph: ExecutionGraph
+    pkl_path, ex_graph = study.stage()
+    ex_graph.set_adapter(yaml_spec.batch)
+
+    adapter = ScriptAdapterFactory.get_adapter(yaml_spec.batch["type"])
+    adapter = adapter(**ex_graph._adapter)
+
+    # Setup a diff ignore pattern to filter out the #INFO (flux version ...
+    ignore_patterns = [
+        re.compile(r'#MAESTRO-INFO \(flux version\)')
+    ]
+
+    # Loop over the steps and execute them
+    for step_name, step_record in ex_graph.values.items():
+        if step_name == "_source":
+            continue
+        
+        ex_graph._execute_record(step_record, adapter)
+        pprint("Step name:")
+        pprint(step_name)
+        pprint("Step record:")
+        pprint(step_record)
+
+        retcode, job_status = ex_graph.check_study_status()
+
+        pprint(f"{retcode=}, {job_status=}")
+        for record_name, status in job_status.items():
+            if step_name == record_name:
+                jobid = ex_graph.values[record_name].jobid[-1]
+
+                # Cancel the job; we just need jobspecs, not completion
+                c_record = adapter.cancel_jobs([jobid])
+
+                flux_jobspec_check(jobid,
+                                   expected_jobspec_keys[step_name],
+                                   source_label='mark.parametrized jobspec',
+                                   ignore_keys={"tasks.0.command.3"},
+                                   debug=False)
+
+                # Add a second test to ensure it matches written scripts' jobspec
+                script_jobspec = generate_jobspec_from_script(step_record.script)
+                
+                flux_jobspec_check(jobid,
+                                   script_jobspec,
+                                   source_label='script jobspec',
+                                   ignore_keys={
+                                       "tasks.0.command.3",  # script/cmd obtained via different methods between two modes
+                                       "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
+                                       # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
+                                       "attributes.system.cwd",  # Irrelevant difference
+                                       "attributes.system.shell.options.rlimit",  # Not populated via python?
+                                       "attributes.system.files.script",  # Attached to cmd in python?
+                                   },
+                                   debug=False)
+
+
+
+@pytest.mark.sched_flux         # This one needs to at least import flux to work
+@pytest.mark.parametrize(
+    "spec_file, variant_id, expected_jobspec_keys, ignore_jobspec_keys",
+    [
+        (
+            "hello_flux_exclusive",
+            1,
+            {
+                "hello_NODES.1.PROCS.1": {
+                    'resources': [
+                        {
+                            "type": "node",
+                            "count": 1,
+                            "exclusive": True,
+                            "with": [
+                                {
+                                    "type": "slot",
+                                    "count": 1,
+                                    "with": [
+                                        {
+                                            "type": "core",
+                                            "count": 1
+                                        }
+                                    ],
+                                    "label": "task"
+                                }
+                            ]
+                        }
+                    ],
+                    'attributes': {
+                        'system': {
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                        }
+                    }
+                },
+                "hello_NODES.1.PROCS.2": {
+                    'resources': [
+                        {
+                            "type": "node",
+                            "count": 1,
+                            "exclusive": True,
+                            "with": [
+                                {
+                                    "type": "slot",
+                                    "count": 1,  # NOTE: EXCLUSIVE SHOULD FORCE THIS TO 1 NOT 2
+                                    "with": [
+                                        {
+                                            "type": "core",
+                                            "count": 1
+                                        }
+                                    ],
+                                    "label": "task"
+                                }
+                            ]
+                        }
+                    ],
+                    'attributes': {
+                        'system': {
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                        }
+                    }
+                },
+                "hello_NODES.2.PROCS.2": {
+                    'resources': [
+                        {
+                            "type": "node",
+                            "count": 2,
+                            "exclusive": True,
+                            "with": [
+                                {
+                                    "type": "slot",
+                                    "count": 1,  # Slots per node!
+                                    "with": [
+                                        {
+                                            "type": "core",
+                                            "count": 1
+                                        }
+                                    ],
+                                    "label": "task"
+                                }
+                            ]
+                        }
+                    ],
+                    'attributes': {
+                        'system': {
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                        }
+                    }
+                },
+                "hello_NODES.2.PROCS.1": {
+                    'resources': [
+                        {
+                            "type": "node",
+                            "count": 2,
+                            "exclusive": True,
+                            "with": [
+                                {
+                                    "type": "slot",
+                                    "count": 1,  # Flux adapter overrides this, 1 slot per node
+                                    "with": [
+                                        {
+                                            "type": "core",
+                                            "count": 1
+                                        }
+                                    ],
+                                    "label": "task"
+                                }
+                            ]
+                        }
+                    ],
+                    'attributes': {
+                        'system': {
+                            'queue': 'pdebug',
+                            'bank': 'guests',
+                        }
+                    }
+                },
+            },
+            {
+                "hello_NODES.1.PROCS.1": ["attributes.system.files"],
+                "hello_NODES.1.PROCS.2": ["attributes.system.files"],
+                "hello_NODES.2.PROCS.2": ["attributes.system.files"],
+                "hello_NODES.2.PROCS.1": ["attributes.system.files"],
+            }
+        ),
+    ]
+)
+def test_flux_resource_configs(
+        spec_file,
+        variant_id,
+        expected_jobspec_keys,
+        ignore_jobspec_keys,
+        variant_spec_path,
+        load_study,
+        flux_jobspec_check,
+        tmp_path,               # Pytest tmp dir fixture: Path
+        generate_jobspec_from_script,
+        capsys
+):
+    spec_path = variant_spec_path(spec_file + f"_{variant_id}.yaml")
+    pprint(spec_path)
+    yaml_spec = YAMLSpecification.load_specification(spec_path)  # Load this up to get the batch info
+
+    print(f"{tmp_path=}")
+    study: Study = load_study(spec_path, tmp_path, dry_run=False)
+    print(f"{study.output_path=}")
+    pkl_path: str
+    ex_graph: ExecutionGraph
+    pkl_path, ex_graph = study.stage()
+    ex_graph.set_adapter(yaml_spec.batch)
+
+    adapter = ScriptAdapterFactory.get_adapter(yaml_spec.batch["type"])
+    adapter = adapter(**ex_graph._adapter)
+
+    # Setup a diff ignore pattern to filter out the #INFO (flux version ...
+    ignore_patterns = [
+        re.compile(r'#MAESTRO-INFO \(flux version\)')
+    ]
+
+    # Loop over the steps and execute them
+    for step_name, step_record in ex_graph.values.items():
+        if step_name == "_source":
+            continue
+
+        ex_graph._execute_record(step_record, adapter)
+        pprint("Step name:")
+        pprint(step_name)
+        pprint("Step record:")
+        pprint(step_record)
+
+        retcode, job_status = ex_graph.check_study_status()
+
+        pprint(f"{retcode=}, {job_status=}")
+        for record_name, status in job_status.items():
+            if step_name == record_name:
+                jobid = ex_graph.values[record_name].jobid[-1]
+
+                # Cancel the job; we just need jobspecs, not completion
+                c_record = adapter.cancel_jobs([jobid])
+
+                # Get the keys to ignore
+                step_ignore_keys = ignore_jobspec_keys[step_name]
+                direct_ignore_defaults = [
+                    "tasks.0.command.3"
+                ]
+                direct_ignore_keys = step_ignore_keys + direct_ignore_defaults
+
+                flux_jobspec_check(jobid,
+                                   expected_jobspec_keys[step_name],
+                                   source_label='mark.parametrized jobspec',
+                                   ignore_keys=set(direct_ignore_keys),
+                                   debug=False)
+
+                # Add a second test to ensure it matches written scripts' jobspec
+                script_jobspec = generate_jobspec_from_script(step_record.script)
+
+                script_ignore_defaults = [
+                    "tasks.0.command.3",  # script/cmd obtained via different methods between two modes
+                    "attributes.system.environment",  # Not populated in 'base' jobspec from python, can't filter from batch --dry-run
+                    # TURN OFF TEMPORARILY TO PATCH UP ASSERTION MESSAGE TRUNCATION
+                    "attributes.system.cwd",  # Irrelevant difference
+                    "attributes.system.shell.options.rlimit",  # Not populated via python?
+                    "attributes.system.files.script"  # Attached to cmd in python?
+                ]
+
+                script_ignore_keys = script_ignore_defaults + step_ignore_keys
+
+                flux_jobspec_check(jobid,
+                                   script_jobspec,
+                                   source_label='script jobspec',
+                                   ignore_keys=set(script_ignore_keys),
+                                   debug=False)

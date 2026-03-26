@@ -1,0 +1,34 @@
+description:
+    name: hello_flux_exclusive_1.yaml
+    description: Test jobspec's resource/slot configs when running exclusive
+
+batch:
+    type        : flux
+    host        : rzadams
+    bank        : guests
+    queue       : pdebug
+        
+env:
+    variables:
+        OUTPUT_PATH: hello_flux_exclusive
+
+study:
+    - name: hello
+      description: Say hello, in parallel!
+      run:
+          cmd: |
+            $(LAUNCHER) echo "HELLO!"
+
+          nodes: $(NODES)
+          procs: $(PROCS)
+          exclusive: True
+          walltime: "00:30"
+
+global.parameters:
+  NODES:
+    values: [1, 1, 2, 2]
+    label: NODES.%%
+
+  PROCS:
+    values: [1, 2, 2, 1]              # Must be >= Nodes!
+    label: PROCS.%%

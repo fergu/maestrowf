@@ -39,6 +39,7 @@ from maestrowf.interfaces.script import CancellationRecord, SubmissionRecord, \
     FluxFactory
 from maestrowf.utils import make_safe_path
 
+
 LOGGER = logging.getLogger(__name__)
 status_re = re.compile(r"Job \d+ status: (.*)$")
 # env_filter = re.compile(r"^(SSH_|LSF)")
@@ -94,12 +95,28 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
 
         # NOTE: Host doesn"t seem to matter for FLUX. sbatch assumes that the
         # current host is where submission occurs.
-        self.add_batch_parameter("nodes", kwargs.pop("nodes", "1"))
+        self._allocation_args = kwargs.get("allocation_args", {})
+        LOGGER.info(f"Allocation args: {self._allocation_args}")
+        self._launcher_args = kwargs.get("launcher_args", {})
         self._addl_args = kwargs.get("args", {})
 
-        # Add --setattr fields to batch job/broker; default to "" such
-        # that 'truthiness' can exclude them from the jobspec if not provided
+        # Normalize the allocation and launcher args to a flat dict, removing dotpath encoding
+        # TODO: workon a validation api that can be hooked up to yamlspec ingestion machinery for
+        # early error messaging
+        if self._allocation_args:
+            self._allocation_args = self._interface.normalize_additional_args(
+                self._allocation_args,
+                group_name="allocation",
+                filter_unknown=True
+            )
+
+        if self._launcher_args:
+            self._launcher_args = self._interface.normalize_additional_args(self._launcher_args)
+        
+        # Default queue/bank to "" such that 'truthiness' can exclude them
+        # from the jobspec/scripts if not provided
         queue = kwargs.pop("queue", "")
+        bank = kwargs.pop("bank", "")
         available_queues = self._interface.get_broker_queues()
         # Ignore queue if specified and we detect broker only has anonymous queue
         if not available_queues and queue:
@@ -111,20 +128,43 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             )
             queue = ""
 
-        self._batch_attrs = {
-            "system.queue": queue,
-            "system.bank": kwargs.pop("bank", ""),
-        }
         self.add_batch_parameter("queue", queue)
+        self.add_batch_parameter("bank", bank)
 
-        # Header is only for informational purposes.
-        # TODO: export these as flux directives for manual step rerunning
+        # Check for the flag in additional args and pop it off, letting step key win later
+        # NOTE: only need presence of key as this mimics cli like flag behavior
+        # TODO: promote this to formally supported behavior for all adapters, push down into interfaces?
+        exclusive_keys = ['x', 'exclusive']
+        self._exclusive = {"allocation": False, "launcher": False}
+        if all(ekey in self._allocation_args for ekey in exclusive_keys):
+            LOGGER.warn("Repeated addition of exclusive flags 'x' and 'exclusive' in allocation_args.")
+
+        alloc_eflags = [self._allocation_args.pop(ekey) for ekey in exclusive_keys if ekey in self._allocation_args]
+        if alloc_eflags:
+            self._exclusive['allocation'] = True
+
+        if all(ekey in self._launcher_args for ekey in exclusive_keys):
+            LOGGER.warn("Repeated addition of exclusive flags 'x' and 'exclusive' in launcher_args.")
+
+        launcher_eflags = [self._launcher_args.pop(ekey) for ekey in exclusive_keys if ekey in self._launcher_args]
+        if launcher_eflags:
+            self._exclusive['launcher'] = True
+
+        self.add_batch_parameter("exclusive", self._exclusive['allocation'])
+
+        # Populate formally supported flux directives in the header
+        self._flux_directive = "#flux: "
         self._header = {
-            "nodes": "#INFO (nodes) {nodes}",
-            "walltime": "#INFO (walltime) {walltime}",
-            "version": "#INFO (flux adapter version) {version}",
-            "flux_version": "#INFO (flux version) {flux_version}",
-            "queue": "#INFO (queue) {queue}",
+            "nodes": f"{self._flux_directive}" + "-N {nodes}",
+            "procs": f"{self._flux_directive}" + "-n {procs}",
+            # NOTE: always use seconds to guard against upstream default behavior changes
+            "walltime": f"{self._flux_directive}" + "-t {walltime}s",
+            "queue": f"{self._flux_directive}" + "-q {queue}",
+            "bank": f"{self._flux_directive}" + "--bank={bank}",
+            "job-name":
+                f"{self._flux_directive}" + "--job-name=\"{job-name}\"\n"
+                f"{self._flux_directive}" + "--output={job-name}.{{{{id}}}}.out\n"
+                f"{self._flux_directive}" + "--error={job-name}.{{{{id}}}}.err"
         }
 
         self._cmd_flags = {
@@ -134,9 +174,17 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         self._extension = "flux.sh"
         self.h = None
 
+        # Addition info flags to add to the header: MAESTRO only! flux ignores
+        # anything after first non-flux-directive line so this must go last
+        self._info_directive = "#MAESTRO-INFO "
+        self._header_info = {
+            "version": f"{self._info_directive}" + "(flux adapter version) {version}",
+            "flux_version": f"{self._info_directive}" + "(flux version) {flux_version}"
+        }
+
         if uri:
             self.add_batch_parameter("flux_uri", uri)
-            self._header['flux_uri'] = "#INFO (flux_uri) {flux_uri}"
+            self._header_info['flux_uri'] = f"{self._info_directive}" + "(flux_uri) {flux_uri}"
 
     @property
     def extension(self):
@@ -165,6 +213,42 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             LOGGER.error(msg)
             raise ValueError(msg)
 
+    def pack_addtl_batch_args(self):
+        """
+        Normalize the allocation args and pack up into the interface specific
+        groups that have assocated jobspec methods, e.g. conf, setattr, setopt.
+
+        :return: dictionary of allocation arg groups to attach to jobspecs
+        """
+        addtl_batch_args = {
+            arg_type: {}
+            for arg_type in self._interface.addtl_alloc_arg_types()
+        }
+        for arg_key, arg_values in self._allocation_args.items():
+            # TODO: move this into a validation function for pre launch
+            #       batch args validation
+            arg_type = self._interface.addtl_alloc_arg_type_map(arg_key)
+            if arg_type is None:
+                # NO WARNINGS HERE: args in 'misc' type handled elsewhere
+                # TODO: add better mechanism for tracking whicn args
+                #       actually get used; dicts can'ppt do this..
+                continue
+
+            new_arg_values = arg_values
+            # Match default of flag types in flux cli.
+            # see https://github.com/flux-framework/flux-core/blob/a3860d4dea5b5a17c473cff4385276e882275252/src/bindings/python/flux/cli/base.py#L734
+            # NOTE: only doing this in alloc; let LAUNCHER cli pass through
+            #       to flux cli (None values are omittied, e.g.
+            #       {o: fastload: None} renders to -o fastload
+            #       Python api doesn't appear to have default value handling?
+            for key, value in new_arg_values.items():
+                if value is None:
+                    value = 1
+
+            addtl_batch_args[arg_type].update(new_arg_values)
+
+        return addtl_batch_args
+
     def get_header(self, step):
         """
         Generate the header present at the top of Flux execution scripts.
@@ -179,17 +263,58 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         batch_header["walltime"] = \
             str(self._convert_walltime_to_seconds(walltime))
 
-        if run["nodes"]:
+        # Unpack exclusive to modify procs/core per task
+        step_exclusive = step.run.get("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+
+        nodes = run.get("nodes", None)
+        if nodes and nodes is not None and nodes != '':
             batch_header["nodes"] = run.pop("nodes")
+
+        # Abusing 'truthiness' here to catch '' values too
+        elif not nodes and step_exclusive['allocation']:
+            LOGGER.error(
+                "Invalid use of exclusive on allocation: "
+                "exclusive can only be set with a node count"
+            )
+
+        if run["procs"] and not step_exclusive['allocation']:
+            batch_header["procs"] = run.pop("procs")
         batch_header["job-name"] = step.name.replace(" ", "_")
         batch_header["comment"] = step.description.replace("\n", " ")
         batch_header["flux_version"] = self._broker_version
 
+        # Handle queue -> omit if anonymous queue was detected
+        if not batch_header["queue"]:
+            batch_header.pop("queue")  # Should we also pop bank here?
+
         modified_header = ["#!{}".format(self._exec)]
+
+        # Process INFO lines at the start to avoid interrupting flux directives
+        for key, value in self._header_info.items():
+            modified_header.append(value.format(**batch_header))
+
+        # Inject a blank # comment line between the info/flux directives for readability
+        modified_header.append("#")
+
         for key, value in self._header.items():
             if key not in batch_header:
                 continue
+            print(f"INFO: processing header: {key=}, {value=}, {batch_header=}")
+
             modified_header.append(value.format(**batch_header))
+
+        # Add exclusive flag to header if requested
+        if step_exclusive['allocation']:
+            modified_header.append(f"{self._flux_directive}" + "--exclusive")
+
+        # Process any optional allocation args
+        for rendered_arg in self._interface.render_additional_args(self._allocation_args):
+            if rendered_arg:
+                # Silent pass through for old versions which don't implement any
+                # interface for batch/allocation args
+                modified_header.append(f"{self._flux_directive}" + rendered_arg)
 
         return "\n".join(modified_header)
 
@@ -203,9 +328,18 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: A string of the parallelize command configured using nodes
                   and procs.
         """
-        ntasks = nodes if nodes else self._batch.get("nodes", 1)
+        # Handle the exclusive flags, updating batch block settings (default)
+        # with what's set in the step, if any given
+        step_exclusive = kwargs.pop("exclusive", None)
+
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
+
+        # TODO: fix this temp hack when standardizing the exclusive key handling
+        kwargs['exclusive'] = step_exclusive['launcher']
+
         return self._interface.parallelize(
-            procs, nodes=ntasks, addtl_args=self._addl_args, **kwargs)
+            procs, nodes=nodes, addtl_args=self._addl_args,
+            launcher_args=self._launcher_args, **kwargs)
 
     def submit(self, step, path, cwd, job_map=None, env=None):
         """
@@ -220,21 +354,31 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
         :returns: The return status of the submission command and job
                   identiifer.
         """
-        nodes = step.run.get("nodes", 1)
-        processors = step.run.get("procs", 0)
+        nodes = step.run.get("nodes", None)
+        processors = step.run.get("procs", 1)
+        
+        # Handle the exclusive flags, updating batch block settings (default)
+        # with what's set in the step, if any given
+        step_exclusive = step.run.get("exclusive", None)
 
-        if not isinstance(nodes, int):
-            if not nodes:
-                nodes = 1
-            else:
-                nodes = int(nodes)
+        step_exclusive = self.resolve_exclusive(self._exclusive, step_exclusive)
 
+        # TODO: track this down and normalize this upstream for all adapters
+        if nodes == '':
+            nodes = None
+
+        if nodes is not None and not isinstance(nodes, int):
+            nodes = int(nodes)
+
+        # TODO: revist this after tracking down '' behavior seen with nodes
         if not isinstance(processors, int):
             if not processors:
-                processors = 1
+                processors = 1  # python api requires >= 1 for procs/tasks
             else:
                 processors = int(processors)
-                
+
+
+            
         force_broker = step.run.get("nested", True)
         walltime = \
             self._convert_walltime_to_seconds(step.run.get("walltime", 0))
@@ -249,7 +393,7 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             except:
                 cores_per_task = 1
         if not cores_per_task:
-            cores_per_task = 1 # max((1, ceil(processors / nodes)))
+            cores_per_task = 1  # flux python api defaults to 1
             LOGGER.warn(
                 "'cores per task' set to a non-value. Populating with a "
                 "sensible default. (cores per task = %d", cores_per_task)
@@ -259,12 +403,13 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             ngpus = step.run.get("gpus", "0")
             ngpus = int(ngpus) if ngpus else 0
         except ValueError as val_error:
+            # TODO: normalize this upstream for all adapters
             msg = f"Specified gpus '{ngpus}' is not a decimal value."
             LOGGER.error(msg)
             raise val_error
 
         # Calculate nprocs
-        ncores = cores_per_task * nodes
+        ncores = cores_per_task * processors  # What was this check doing?
         # Raise an exception if ncores is 0
         if ncores <= 0:
             msg = "Invalid number of cores specified. " \
@@ -272,14 +417,39 @@ class FluxScriptAdapter(SchedulerScriptAdapter):
             LOGGER.error(msg)
             raise ValueError(msg)
 
+        # Modify jobspec if exclusive to exclude procs/cores/gpus keys
+        # TODO: sort out confusing mixing of per task specs here and jobspec
+        #       creation calls using per slot specs...
+        # TODO: refactor into shared resource modification between this and
+        #       write_script/parallelize
+        if nodes and step_exclusive['allocation']:
+            # Should we do this here or inside submit?
+            processors = nodes  # one slot per node
+            cores_per_task = 1  # cores per slot >= 1 in python api
+            # filter out ngpus_per_slot inside submit
+
         # Unpack waitable flag and pass it along if there: only pass it along if
         # it's in the step maybe, leaving each adapter to retain their defaults?
         waitable = step.run.get("waitable", False)
+
+        # Normalize the allocation args to api flux.job.JobspecV1 expects
+        packed_alloc_args = self._interface.pack_addtl_batch_args(self._allocation_args)
+
+        # Add queue and bank
+        queue = self._batch["queue"]
+        if queue == "":
+            queue = None
+        bank = self._batch["bank"]
+        if bank == "":
+            bank = None
+
         jobid, retcode, submit_status = \
             self._interface.submit(
                 nodes, processors, cores_per_task, path, cwd, walltime, ngpus,
                 job_name=step.name, force_broker=force_broker, urgency=urgency,
-                waitable=waitable, batch_attrs=self._batch_attrs
+                waitable=waitable, queue=queue, bank=bank,
+                addtl_batch_args=packed_alloc_args,
+                exclusive=step_exclusive['allocation'],
             )
 
         return SubmissionRecord(submit_status, retcode, jobid)

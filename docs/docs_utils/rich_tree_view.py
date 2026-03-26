@@ -105,6 +105,8 @@ def export_svg(
     clear: bool = True,
     code_format: str = CONSOLE_SVG_FORMAT,
         char_height: int = 16,
+    font_aspect_ratio: float = 0.61,
+    unique_id: Optional[str] = None,
 ) -> str:
     """
     Generate an SVG from the console contents (requires record=True in Console constructor).
@@ -157,9 +159,9 @@ def export_svg(
 
     _theme = theme or SVG_EXPORT_THEME
 
-    width = self.width
+    width = 90 # self.width
     # char_height = 20
-    char_width = char_height * 0.61
+    char_width = char_height * font_aspect_ratio # 0.61
     line_height = char_height * 1.22
 
     margin_top = 1
@@ -211,14 +213,15 @@ def export_svg(
         if clear:
             self._record_buffer.clear()
 
-    unique_id = "terminal-" + str(
-        zlib.adler32(
-            ("".join(segment.text for segment in segments)).encode(
-                "utf-8", "ignore"
+    if unique_id is None:
+        unique_id = "terminal-" + str(
+            zlib.adler32(
+                ("".join(segment.text for segment in segments)).encode(
+                    "utf-8", "ignore"
+                )
+                + title.encode("utf-8", "ignore")
             )
-            + title.encode("utf-8", "ignore")
         )
-    )
     y = 0
     segments = Segment.split_and_crop_lines(segments, length=width)
     for y, line in enumerate(segments):
@@ -541,7 +544,11 @@ def walk_directory(directory: pathlib.Path,
                            ext_filt=ext_filt)
         else:
             text_filename = Text(path.name, "green")
-            text_filename.highlight_regex(r"\..*$", "bold red")
+            escaped_suffix = path.suffix.replace(".", r"\.")
+            print(f"Found suffix {escaped_suffix} for {path.name}")
+            text_filename.highlight_regex(escaped_suffix + r"$",
+                                          "bold red")
+            # text_filename.highlight_regex(r"\..*$", "bold red")
             text_filename.stylize(f"link file://{path}")
             file_size = path.stat().st_size
             text_filename.append(f" ({decimal(file_size)})", "blue")
