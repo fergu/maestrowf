@@ -53,6 +53,7 @@ tox = "*"
 pytest = "*"
 pytest-cov = "*"
 pre-commit = "*"
+scriv = { version = "*", python = ">=3.11" }
 tox-travis = "*"
 tox-pyenv = "*"
 hypothesis = [
@@ -87,3 +88,18 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 79
+
+[tool.scriv]
+format = "md"
+fragment_directory = "changelog.d"
+output_file = "CHANGELOG.md"
+md_header_level = 2
+categories = ["Added", "Changed", "Fixed", "Removed", "Documentation", "Maintenance"]
+# Type of change 	Category
+# New feature 	Added
+# Behavior improvement 	Changed
+# Bug fix 	Fixed
+# Removal/deprecation 	Removed
+# User docs/recipes 	Documentation
+# CI, tooling, dependency, contributor workflow, internal refactor 	Maintenance
+version = "literal: pyproject.toml: tool.poetry.version"

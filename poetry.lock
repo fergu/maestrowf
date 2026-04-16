@@ -220,6 +220,20 @@ files = [
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
 
 [[package]]
+name = "click-log"
+version = "0.4.0"
+description = "Logging integration for Click"
+optional = false
+python-versions = "*"
+files = [
+    {file = "click-log-0.4.0.tar.gz", hash = "sha256:3970f8570ac54491237bcdb3d8ab5e3eef6c057df29f8c3d1151a51a9c23b975"},
+    {file = "click_log-0.4.0-py2.py3-none-any.whl", hash = "sha256:a43e394b528d52112af599f2fc9e4b7cf3c15f94e53581f74fa6867e68c91756"},
+]
+
+[package.dependencies]
+click = "*"
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
@@ -1644,6 +1658,29 @@ files = [
 ]
 
 [[package]]
+name = "scriv"
+version = "1.8.0"
+description = "Scriv changelog management tool"
+optional = false
+python-versions = ">=3.10"
+files = [
+    {file = "scriv-1.8.0-py3-none-any.whl", hash = "sha256:f00f51325b2f4bc96b16fbb1239d4ab577cc2422301a5dd4f5f9378aae2549e0"},
+    {file = "scriv-1.8.0.tar.gz", hash = "sha256:7b1a105dd411ac541998250fc8594742419f94cee984ca1257c5ebf5af21918b"},
+]
+
+[package.dependencies]
+attrs = "*"
+click = "*"
+click-log = "*"
+jinja2 = ">=2.7"
+markdown-it-py = "*"
+requests = "*"
+
+[package.extras]
+toml = ["tomli"]
+yaml = ["pyyaml"]
+
+[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -1901,4 +1938,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8,<4.0"
-content-hash = "d414f3feaea63f6f96dd8ee39400ef54c0d799208a288553ef982d6f56112b9f"
+content-hash = "8c144305abff1f4739d1a4e39a6c6b52da3b9f2e8ac53e4eaa392abe8be94627"
