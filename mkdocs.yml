@@ -118,7 +118,7 @@ extra:
 
 watch:                          # NOTE: This doesn't seem to work?
   - CHANGELOG.md
-  - CHANGELOG_docs.md
+  # - CHANGELOG_docs.md    # Turn off as this doesn't always exist, which mkdocs doesn't like
   - changelog.d
   - scriv_docs.ini
   
