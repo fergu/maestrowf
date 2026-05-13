@@ -35,6 +35,7 @@ plugins:
         scripts:
           - docs/gen_api_docs.py
           - docs/gen_changelog.py
+          - docs/gen_contributing.py
     - literate-nav:
         nav_file: SUMMARY.md
     - glightbox
@@ -108,6 +109,7 @@ nav:
     - What's New:
         - Overview: whats_new/index.md
         - Changelog: whats_new/changelog.md
+        - Contributing: whats_new/contributing.md
               
 extra:
   social:
@@ -121,5 +123,6 @@ watch:                          # NOTE: This doesn't seem to work?
   # - CHANGELOG_docs.md    # Turn off as this doesn't always exist, which mkdocs doesn't like
   - changelog.d
   - scriv_docs.ini
+  - CONTRIBUTING.md
   
 copyright: Copyright &copy; 2017 | Francesco Di Natale; Copyright &copy; 2023 | Francesco Di Natale, Jeremy White
