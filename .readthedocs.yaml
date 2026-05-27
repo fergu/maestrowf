@@ -17,6 +17,8 @@ build:
       # VIRTUAL_ENV needs to be set manually for now.
       # See https://github.com/readthedocs/readthedocs.org/pull/11152/
       - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install --with dev
+      # Build the changelog to include in the docs
+      - bash scripts/rtd_docs_prepare.sh
 
 # build:
 #   os: ubuntu-24.04
