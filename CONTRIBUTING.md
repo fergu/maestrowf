@@ -43,7 +43,7 @@ Hotfixes on `main` are allowed in principle, but no formal hotfix workflow has b
 
 ## Changelog fragments
 
-This project uses `scriv` to manage changelog fragments.  `scriv` is installed with the project dependencies, and creating the fragment is as simple as `scrive create` from the top level and then edit that fragment. Fragments are stored in:
+This project uses `scriv` to manage changelog fragments.  `scriv` is installed with the project dependencies, and creating the fragment is as simple as `scriv create` from the top level and then edit that fragment. Fragments are stored in:
 
 - `changelog.d/`
 
@@ -117,7 +117,7 @@ The documentation includes a `What's New` section with:
 
 ## Release process
 
-The release process is currently manual.
+The release process is currently manual. See [RELEASE.md](RELEASE.md) for the maintainer checklist, TestPyPI/PyPI publishing commands, release-note guidance, and a proposed GitHub Actions automation plan.
 
 Typical steps:
 

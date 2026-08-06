@@ -26,7 +26,9 @@ def get_contributing_content() -> str:
         Markdown content for the generated contributing page.
     """
     if SOURCE.exists():
-        return SOURCE.read_text(encoding="utf-8")
+        return SOURCE.read_text(encoding="utf-8").replace(
+            "(RELEASE.md)", "(release.md)"
+        )
 
     return "# Contributing\n\nContributor guide not found.\n"
 
