@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.2.1'></a>
+## 1.2.1 — 2026-08-10
+
+### Changed
+
+- Write an initial `status.csv` as soon as the study graph has been constructed. Previously, the status file was not written until after scheduler submission of the first job step (when an asynchronous job step), or completion of the first job step (for a synchronous job step). Implemented in [PR #477](https://github.com/llnl/maestrowf/pull/477).
+
+### Fixed
+
+- `get_used_parameters` no longer matches a parameter whose name is a prefix of another, so a step using only `$(NP)` is no longer reported as also using `$(N)`.  The token pattern now requires an exact name followed by an optional `.attribute`, and the name is escaped before it goes into the regex.  Implemented in [PR #478](https://github.com/llnl/maestrowf/pull/478).
+
+- Guards sleep in submit loop to only trigger if a submission failure occurs.  Significantly speeds up job submission rates which were previously capped at 1 per second due to this sleep.  Implemented in [PR #481](https://github.com/llnl/maestrowf/pull/481).
+
+### Documentation
+
+- Add what's new section to publish changelog and additional roadmap related material.  Implemented in [PR #472](https://github.com/llnl/maestrowf/pull/472).
+
+### Maintenance
+
+- Changelog automation via [scriv](https://github.com/nedbat/scriv).  Implemented in [PR #472](https://github.com/llnl/maestrowf/pull/472)
+
+- Creates ci profile for hypothesis enabled tests to account for increased system variability via extending deadlines.  Implemented in [PR #480](https://github.com/llnl/maestrowf/pull/480).
+
 ## v1.2.0, 2026-03-27
 
 ### Added

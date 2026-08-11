@@ -36,6 +36,7 @@ plugins:
           - docs/gen_api_docs.py
           - docs/gen_changelog.py
           - docs/gen_contributing.py
+          - docs/gen_release.py
     - literate-nav:
         nav_file: SUMMARY.md
     - glightbox
@@ -110,6 +111,7 @@ nav:
         - Overview: whats_new/index.md
         - Changelog: whats_new/changelog.md
         - Contributing: whats_new/contributing.md
+        - Release Process: whats_new/release.md
               
 extra:
   social:

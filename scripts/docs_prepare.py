@@ -33,6 +33,11 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def has_changelog_fragments(fragment_dir: Path) -> bool:
+    """Return whether Scriv has Markdown fragments to collect."""
+    return fragment_dir.exists() and any(fragment_dir.glob("*.md"))
+
+
 def prepare_docs_changelog(repo_root: Path, mode: str, title: str | None = None) -> None:
     """Create the changelog file used by the documentation build.
 
@@ -55,8 +60,9 @@ def prepare_docs_changelog(repo_root: Path, mode: str, title: str | None = None)
     """
     changelog = repo_root / "CHANGELOG.md"
     docs_changelog = repo_root / "CHANGELOG_docs.md"
-     # TODO: Consider moving this into scripts too to avoid repo-root clutter?
+    # TODO: Consider moving this into scripts too to avoid repo-root clutter?
     scriv_config = repo_root / "scriv_docs.ini"
+    fragment_dir = repo_root / "changelog.d"
 
     if not changelog.exists():
         raise FileNotFoundError(f"Missing source changelog: {changelog}")
@@ -65,6 +71,13 @@ def prepare_docs_changelog(repo_root: Path, mode: str, title: str | None = None)
     shutil.copyfile(changelog, docs_changelog)
 
     if mode == "dev":
+        if not has_changelog_fragments(fragment_dir):
+            print(
+                f"No changelog fragments found in {fragment_dir}; "
+                "skipping scriv collect."
+            )
+            return
+
         cmd = [
             "scriv",
             "collect",
