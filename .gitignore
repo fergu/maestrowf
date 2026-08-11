@@ -46,3 +46,6 @@ Pipfile.lock
 
 #pycharm
 .idea/
+
+# Temp changelog bits for the docs
+CHANGELOG_docs.md

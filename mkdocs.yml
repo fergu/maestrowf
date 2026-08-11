@@ -34,6 +34,9 @@ plugins:
     - gen-files:
         scripts:
           - docs/gen_api_docs.py
+          - docs/gen_changelog.py
+          - docs/gen_contributing.py
+          - docs/gen_release.py
     - literate-nav:
         nav_file: SUMMARY.md
     - glightbox
@@ -104,12 +107,24 @@ nav:
         - Maestro Reference: Maestro/reference_guide/index.md
         - Design Reference: Maestro/reference_guide/design_reference/
         - API Reference: Maestro/reference_guide/api_reference/
-
-            # - API Reference: 'reference/'
+    - What's New:
+        - Overview: whats_new/index.md
+        - Changelog: whats_new/changelog.md
+        - Contributing: whats_new/contributing.md
+        - Release Process: whats_new/release.md
               
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/LLNL/maestrowf
       name: Maestro on GitHub
+
+
+watch:                          # NOTE: This doesn't seem to work?
+  - CHANGELOG.md
+  # - CHANGELOG_docs.md    # Turn off as this doesn't always exist, which mkdocs doesn't like
+  - changelog.d
+  - scriv_docs.ini
+  - CONTRIBUTING.md
+  
 copyright: Copyright &copy; 2017 | Francesco Di Natale; Copyright &copy; 2023 | Francesco Di Natale, Jeremy White

@@ -423,7 +423,7 @@ class ExecutionGraph(DAG, PickleInterface):
 
     def update_rlimit(self, new_restart_limit):
         # subtree, _ = self.bfs_subtree(SOURCE)
-            
+
         # update_subtree = [key for key in subtree
         #                             if key != '_source']
 
@@ -642,7 +642,8 @@ class ExecutionGraph(DAG, PickleInterface):
             # Increment the number of restarts we've attempted.
             LOGGER.debug("Completed submission attempt %d", num_restarts)
             num_restarts += 1
-            sleep((random.random() + 1) * num_restarts)
+            if retcode != SubmissionCode.OK:
+                sleep((random.random() + 1) * num_restarts)
 
         if retcode == SubmissionCode.OK:
             self.in_progress.add(record.name)
@@ -682,7 +683,7 @@ class ExecutionGraph(DAG, PickleInterface):
 
         return self._status_subtree
 
-    def write_status(self, path):
+    def write_status(self, path: os.PathLike) -> None:
         """Write the status of the DAG to a CSV file."""
         header = "Step Name,Job ID,Workspace,State,Run Time,Elapsed Time," \
                  "Start Time,Submit Time,End Time,Number Restarts,Params"
