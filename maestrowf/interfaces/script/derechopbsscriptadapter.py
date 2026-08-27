@@ -81,7 +81,7 @@ class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
 
         :param **kwargs: A dictionary with default settings for the adapter.
         """
-        super(PBSScriptAdapter, self).__init__(**kwargs)
+        super(DerechoPBSScriptAdapter, self).__init__(**kwargs)
 
         # NOTE: Host doesn't seem to matter for PBS. qsub assumes that the
         # current host is where submission occurs.
