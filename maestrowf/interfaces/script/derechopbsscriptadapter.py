@@ -4,7 +4,7 @@
 # with help from Claude
 # The license for the whole repository applies and is reproduced below.
 #
-# This file is part of MaestroWF, Version: 1.0.0.
+# This file is part of MaestroWF, Version: 1.2.1
 #
 # For details, see https://github.com/LLNL/maestrowf.
 #
@@ -26,7 +26,7 @@
 # SOFTWARE.
 ###############################################################################
 
-"""PBS Scheduler interface implementation."""
+"""Implementation for a PBS Scheduler on NCAR's Derecho"""
 import getpass
 import logging
 from math import ceil
@@ -42,10 +42,27 @@ from maestrowf.utils import make_safe_path, start_process
 LOGGER = logging.getLogger(__name__)
 
 
-class PBSScriptAdapter(SchedulerScriptAdapter):
-    """A ScriptAdapter class for interfacing with the PBS scheduler."""
+class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
+    """
+    A ScriptAdapter class for interfacing with the PBS scheduler on NCAR's Derecho.
+    This adapter is specific to the PBS implementation on NCAR's Derecho
+    computer. In general, most commands are compliant with a general PBS
+    implementation. However, there are a few aspects of note:
+        * `get_parallelize_command` (and `self._cmd_flags`) builds the launch
+          command as
+            mpiexec -n <procs> -ppn <procs_per_node> -d <cores_per_task>
+          A brief search shows that this format may be specific to Derecho and not
+          portable to other installations (e.g., the open-mpi docs do not show `-ppn` or `-d` as
+          valid flags). This is the main thing that makes this adapter Derecho-specific
+        * Exit codes are interpreted as follows:
+          - 0: Success
+          - > 0: Failure
+          - < 0: Timed out (e.g. failed due to exceeding walltime)
+          This may not be Derecho-specific, but I haven't done an exhaustive search to say otherwise,
+          so it is probably better to have this as a stipulation.
+    """
 
-    key = "pbs"
+    key = "pbs_derecho"
 
     def __init__(self, **kwargs):
         """
