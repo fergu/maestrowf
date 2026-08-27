@@ -90,6 +90,7 @@ class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
         self.add_batch_parameter("bank", kwargs.pop("bank"))
         self.add_batch_parameter("queue", kwargs.pop("queue"))
         self.add_batch_parameter("reservation", kwargs.pop("reservation", ""))
+        self.add_batch_parameter("qos", kwargs.get("qos"))
 
         # Check for procs separately, as we don't want it in the header if
         # it's not present.
@@ -111,6 +112,7 @@ class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
                 "#PBS -o {job-name}.out\n"
                 "#PBS -e {job-name}.err",
             "reservation": "#PBS -l advres={reservation}",
+            "qos": "#PBS -l job_priority={qos}",
         }
 
         self._exclusive_header = "#PBS -l place=excl"
