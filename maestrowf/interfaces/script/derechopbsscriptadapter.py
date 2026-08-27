@@ -125,6 +125,40 @@ class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
         self._extension = "pbs.sh"
         self._unsupported = set(["cmd", "ntasks", "nodes", "procs per node"])
 
+    def _resolve_mpiprocs(self, procs_per_node, cores_per_task):
+        """
+        Compute the number of MPI ranks (mpiprocs) to place per node, given
+        the number of cores reserved per node (ncpus) and the number of
+        cores each rank's task should own (e.g. for OpenMP threading).
+
+        :param procs_per_node: Number of cores (ncpus) reserved per node.
+        :param cores_per_task: Number of cores per MPI rank/task.
+        :returns: The number of MPI ranks (mpiprocs) to place per node.
+        """
+        procs_per_node = int(procs_per_node)
+
+        try:
+            cores_per_task = int(cores_per_task)
+        except (TypeError, ValueError):
+            cores_per_task = 1
+        if not cores_per_task:
+            cores_per_task = 1
+
+        mpiprocs_per_node = int(
+            ceil(float(procs_per_node) / float(cores_per_task)))
+
+        if mpiprocs_per_node * cores_per_task > procs_per_node:
+            err_msg = \
+                "'cores per task' ({}) does not evenly divide the " \
+                "requested cores per node ({}). Adjust 'cores per task' " \
+                "or 'procs per node' so that mpiprocs * cores per task " \
+                "does not exceed ncpus.".format(
+                    cores_per_task, procs_per_node)
+            LOGGER.error(err_msg)
+            raise RuntimeError(err_msg)
+
+        return mpiprocs_per_node
+
     def get_header(self, step):
         """
         Generate the header present at the top of PBS execution scripts.
@@ -174,8 +208,11 @@ class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
             else:
                 procs_per_node = 1
 
+        mpiprocs_per_node = self._resolve_mpiprocs(
+            procs_per_node, resources.get("cores per task"))
+
         select = "select={}:ncpus={}:mpiprocs={}".format(
-            select_nodes, procs_per_node, procs_per_node)
+            select_nodes, procs_per_node, mpiprocs_per_node)
 
         gpus = resources.get("gpus")
         if gpus:
@@ -214,9 +251,12 @@ class DerechoPBSScriptAdapter(SchedulerScriptAdapter):
             if not procs_per_node:
                 procs_per_node = int(ceil(float(procs) / float(nodes)))
 
+            mpiprocs_per_node = self._resolve_mpiprocs(
+                procs_per_node, kwargs.get("cores per task"))
+
             args += [
                 self._cmd_flags["nodes"],
-                str(procs_per_node),
+                str(mpiprocs_per_node),
             ]
 
         supported = set(kwargs.keys()) - self._unsupported
